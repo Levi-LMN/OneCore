@@ -3,55 +3,58 @@
 {% block page_title %}Sales Management{% endblock %}
 
 {% block content %}
-<div class="row mb-4">
+<!-- Header Section -->
+<div class="row mb-3 mb-md-4">
     <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center">
-            <h2>Sales Management</h2>
-            <div class="d-flex align-items-center">
-                <label for="dateSelect" class="form-label me-2">Date:</label>
-                <input type="date" class="form-control me-3" id="dateSelect" value="{{ selected_date.strftime('%Y-%m-%d') }}"
-                       onchange="window.location.href='{{ url_for('sales') }}?date=' + this.value">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3">
+            <h2 class="mb-0">Sales Management</h2>
+            <div class="d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center gap-2 w-100 w-md-auto">
+                <div class="d-flex align-items-center flex-fill flex-sm-fill-0">
+                    <label for="dateSelect" class="form-label me-2 text-nowrap">Date:</label>
+                    <input type="date" class="form-control" id="dateSelect" value="{{ selected_date.strftime('%Y-%m-%d') }}"
+                           onchange="window.location.href='{{ url_for('sales') }}?date=' + this.value">
+                </div>
                 <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSaleModal">
-                    <i class="fas fa-plus me-2"></i>New Sale
+                    <i class="fas fa-plus me-2"></i><span class="d-none d-sm-inline">New </span>Sale
                 </button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Sales Summary -->
-<div class="row mb-4">
-    <div class="col-md-3">
-        <div class="card text-white bg-primary">
-            <div class="card-body">
-                <h6>Total Sales</h6>
-                <h4>{{ format_currency(total_sales) }}</h4>
+<!-- Sales Summary Cards -->
+<div class="row mb-3 mb-md-4 g-2 g-md-3">
+    <div class="col-6 col-md-3">
+        <div class="card text-white bg-primary h-100">
+            <div class="card-body p-2 p-md-3">
+                <h6 class="card-title mb-1 small">Total Sales</h6>
+                <h4 class="mb-0 fs-6 fs-md-4">{{ format_currency(total_sales) }}</h4>
             </div>
         </div>
     </div>
     {% if current_user.role in ['admin', 'manager'] %}
-    <div class="col-md-3">
-        <div class="card text-white bg-success">
-            <div class="card-body">
-                <h6>Total Profit</h6>
-                <h4>{{ format_currency(total_profit) }}</h4>
+    <div class="col-6 col-md-3">
+        <div class="card text-white bg-success h-100">
+            <div class="card-body p-2 p-md-3">
+                <h6 class="card-title mb-1 small">Total Profit</h6>
+                <h4 class="mb-0 fs-6 fs-md-4">{{ format_currency(total_profit) }}</h4>
             </div>
         </div>
     </div>
     {% endif %}
-    <div class="col-md-3">
-        <div class="card text-white bg-info">
-            <div class="card-body">
-                <h6>Discounts Given</h6>
-                <h4>{{ format_currency(total_discount) }}</h4>
+    <div class="col-6 col-md-3">
+        <div class="card text-white bg-info h-100">
+            <div class="card-body p-2 p-md-3">
+                <h6 class="card-title mb-1 small">Discounts Given</h6>
+                <h4 class="mb-0 fs-6 fs-md-4">{{ format_currency(total_discount) }}</h4>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-secondary">
-            <div class="card-body">
-                <h6>Original Amount</h6>
-                <h4>{{ format_currency(total_original) }}</h4>
+    <div class="col-6 col-md-3">
+        <div class="card text-white bg-secondary h-100">
+            <div class="card-body p-2 p-md-3">
+                <h6 class="card-title mb-1 small">Original Amount</h6>
+                <h4 class="mb-0 fs-6 fs-md-4">{{ format_currency(total_original) }}</h4>
             </div>
         </div>
     </div>
@@ -60,12 +63,13 @@
 <!-- Sales Table -->
 <div class="card">
     <div class="card-header">
-        <h5><i class="fas fa-list me-2"></i>Sales for {{ selected_date.strftime('%B %d, %Y') }}</h5>
+        <h5 class="mb-0"><i class="fas fa-list me-2"></i>Sales for {{ selected_date.strftime('%B %d, %Y') }}</h5>
     </div>
-    <div class="card-body">
+    <div class="card-body p-0">
         {% if sales_data %}
-        <div class="table-responsive">
-            <table class="table table-hover">
+        <!-- Desktop Table View -->
+        <div class="table-responsive d-none d-lg-block">
+            <table class="table table-hover mb-0">
                 <thead>
                     <tr>
                         <th>Time</th>
@@ -130,15 +134,93 @@
                 </tbody>
             </table>
         </div>
+
+        <!-- Mobile Card View -->
+        <div class="d-block d-lg-none">
+            {% for sale, variant, product, user, category, size in sales_data %}
+            <div class="card border-0 border-bottom rounded-0">
+                <div class="card-body p-3">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            <h6 class="mb-1 fw-bold">{{ product.name }}</h6>
+                            <small class="text-muted">{{ size.name }} • {{ sale.timestamp.strftime('%H:%M') }}</small>
+                        </div>
+                        <div class="text-end">
+                            <div class="fw-bold text-primary">{{ format_currency(sale.total_amount) }}</div>
+                            {% if sale.discount_amount > 0 %}
+                            <small class="text-warning">-{{ format_currency(sale.discount_amount) }}</small>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-4">
+                            <small class="text-muted d-block">Quantity</small>
+                            <span>{{ sale.quantity }}</span>
+                        </div>
+                        <div class="col-4">
+                            <small class="text-muted d-block">Unit Price</small>
+                            <span>{{ format_currency(sale.unit_price) }}</span>
+                        </div>
+                        <div class="col-4">
+                            <small class="text-muted d-block">Original</small>
+                            <span>{{ format_currency(sale.original_amount) }}</span>
+                        </div>
+                    </div>
+
+                    <div class="mb-2">
+                        <small class="text-muted d-block">Payment Method</small>
+                        <div class="d-flex flex-wrap gap-2">
+                            {% if sale.cash_amount > 0 %}
+                            <span class="badge bg-success">Cash: {{ format_currency(sale.cash_amount) }}</span>
+                            {% endif %}
+                            {% if sale.mpesa_amount > 0 %}
+                            <span class="badge bg-info">M-Pesa: {{ format_currency(sale.mpesa_amount) }}</span>
+                            {% endif %}
+                            {% if sale.credit_amount > 0 %}
+                            <span class="badge bg-warning">Credit: {{ format_currency(sale.credit_amount) }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center">
+                        <small class="text-muted">By: {{ user.full_name }}</small>
+                        {% if current_user.role in ['admin', 'manager'] or sale.attendant_id == current_user.id %}
+                        <div class="btn-group btn-group-sm">
+                            <a href="{{ url_for('edit_sale', sale_id=sale.id) }}" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                            <form method="POST" action="{{ url_for('delete_sale', sale_id=sale.id) }}" style="display: inline;"
+                                  onsubmit="return confirm('Are you sure you want to delete this sale?')">
+                                <button type="submit" class="btn btn-outline-danger btn-sm">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    {% if sale.discount_reason %}
+                    <div class="mt-2">
+                        <small class="text-muted">Discount reason: {{ sale.discount_reason }}</small>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
         {% else %}
-        <p class="text-center text-muted py-4">No sales recorded for this date</p>
+        <div class="p-4 text-center text-muted">
+            <i class="fas fa-receipt fa-3x mb-3 opacity-25"></i>
+            <p class="mb-0">No sales recorded for this date</p>
+        </div>
         {% endif %}
     </div>
 </div>
 
 <!-- Add Sale Modal -->
 <div class="modal fade" id="addSaleModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Record New Sale</h5>
@@ -146,93 +228,81 @@
             </div>
             <form method="POST" action="{{ url_for('add_sale') }}">
                 <div class="modal-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label for="variant_id" class="form-label">Product Variant</label>
-                                <select class="form-select" id="variant_id" name="variant_id" required>
-                                    <option value="">Select product variant</option>
-                                    {% for variant, product, category, size in variants %}
-                                    <option value="{{ variant.id }}" data-price="{{ variant.selling_price }}" data-available="{{ variant.get_available_stock_in_variant_units() }}">
-                                        {{ product.name }} - {{ size.name }} ({{ format_currency(variant.selling_price) }})
-                                        - Available: {{ variant.get_available_stock_in_variant_units() }}
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                            </div>
+                    <!-- Product Selection -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-12">
+                            <label for="variant_id" class="form-label">Product Variant</label>
+                            <select class="form-select" id="variant_id" name="variant_id" required>
+                                <option value="">Select product variant</option>
+                                {% for variant, product, category, size in variants %}
+                                <option value="{{ variant.id }}" data-price="{{ variant.selling_price }}" data-available="{{ variant.get_available_stock_in_variant_units() }}">
+                                    {{ product.name }} - {{ size.name }} ({{ format_currency(variant.selling_price) }})
+                                    - Available: {{ variant.get_available_stock_in_variant_units() }}
+                                </option>
+                                {% endfor %}
+                            </select>
                         </div>
-                        <div class="col-md-3">
-                            <div class="mb-3">
-                                <label for="quantity" class="form-label">Quantity</label>
-                                <input type="number" class="form-control" id="quantity" name="quantity" min="1" step="0.5" required>
-                            </div>
+                        <div class="col-6 col-sm-4">
+                            <label for="quantity" class="form-label">Quantity</label>
+                            <input type="number" class="form-control" id="quantity" name="quantity" min="1" step="0.5" required>
                         </div>
-                        <div class="col-md-3">
-                            <div class="mb-3">
-                                <label for="unit_price" class="form-label">Unit Price</label>
-                                <input type="number" class="form-control" id="unit_price" name="unit_price" step="0.01" required readonly>
-                            </div>
+                        <div class="col-6 col-sm-4">
+                            <label for="unit_price" class="form-label">Unit Price</label>
+                            <input type="number" class="form-control" id="unit_price" name="unit_price" step="0.01" required readonly>
                         </div>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label for="discount_type" class="form-label">Discount Type</label>
-                                <select class="form-select" id="discount_type" name="discount_type">
-                                    <option value="none">No Discount</option>
-                                    <option value="percentage">Percentage Discount</option>
-                                    <option value="fixed">Fixed Amount Discount</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="mb-3">
-                                <label for="discount_value" class="form-label">Discount Value</label>
-                                <input type="number" class="form-control" id="discount_value" name="discount_value" step="0.01" min="0">
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="mb-3">
-                                <label for="discount_reason" class="form-label">Discount Reason</label>
-                                <input type="text" class="form-control" id="discount_reason" name="discount_reason" placeholder="Optional">
-                            </div>
+                        <div class="col-12 col-sm-4">
+                            <label for="sale_date" class="form-label">Sale Date</label>
+                            <input type="date" class="form-control" id="sale_date" name="sale_date" value="{{ today.strftime('%Y-%m-%d') }}" required>
                         </div>
                     </div>
 
-                    <div class="row">
-                        <div class="col-md-4">
-                            <div class="mb-3">
-                                <label for="cash_amount" class="form-label">Cash Amount</label>
-                                <input type="number" class="form-control" id="cash_amount" name="cash_amount" step="0.01" min="0" value="0">
-                            </div>
+                    <!-- Discount Section -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-12">
+                            <h6 class="mb-3"><i class="fas fa-percent me-2"></i>Discount Information</h6>
                         </div>
-                        <div class="col-md-4">
-                            <div class="mb-3">
-                                <label for="mpesa_amount" class="form-label">M-Pesa Amount</label>
-                                <input type="number" class="form-control" id="mpesa_amount" name="mpesa_amount" step="0.01" min="0" value="0">
-                            </div>
+                        <div class="col-12 col-sm-4">
+                            <label for="discount_type" class="form-label">Discount Type</label>
+                            <select class="form-select" id="discount_type" name="discount_type">
+                                <option value="none">No Discount</option>
+                                <option value="percentage">Percentage Discount</option>
+                                <option value="fixed">Fixed Amount Discount</option>
+                            </select>
                         </div>
-                        <div class="col-md-4">
-                            <div class="mb-3">
-                                <label for="credit_amount" class="form-label">Credit Amount</label>
-                                <input type="number" class="form-control" id="credit_amount" name="credit_amount" step="0.01" min="0" value="0">
-                            </div>
+                        <div class="col-6 col-sm-4">
+                            <label for="discount_value" class="form-label">Discount Value</label>
+                            <input type="number" class="form-control" id="discount_value" name="discount_value" step="0.01" min="0">
+                        </div>
+                        <div class="col-6 col-sm-4">
+                            <label for="discount_reason" class="form-label">Discount Reason</label>
+                            <input type="text" class="form-control" id="discount_reason" name="discount_reason" placeholder="Optional">
                         </div>
                     </div>
 
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label for="customer_name" class="form-label">Customer Name</label>
-                                <input type="text" class="form-control" id="customer_name" name="customer_name" placeholder="Required for credit sales">
-                            </div>
+                    <!-- Payment Section -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-12">
+                            <h6 class="mb-3"><i class="fas fa-credit-card me-2"></i>Payment Information</h6>
                         </div>
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label for="sale_date" class="form-label">Sale Date</label>
-                                <input type="date" class="form-control" id="sale_date" name="sale_date" value="{{ today.strftime('%Y-%m-%d') }}" required>
-                            </div>
+                        <div class="col-12 col-sm-4">
+                            <label for="cash_amount" class="form-label">Cash Amount</label>
+                            <input type="number" class="form-control" id="cash_amount" name="cash_amount" step="0.01" min="0" value="0">
+                        </div>
+                        <div class="col-12 col-sm-4">
+                            <label for="mpesa_amount" class="form-label">M-Pesa Amount</label>
+                            <input type="number" class="form-control" id="mpesa_amount" name="mpesa_amount" step="0.01" min="0" value="0">
+                        </div>
+                        <div class="col-12 col-sm-4">
+                            <label for="credit_amount" class="form-label">Credit Amount</label>
+                            <input type="number" class="form-control" id="credit_amount" name="credit_amount" step="0.01" min="0" value="0">
+                        </div>
+                    </div>
+
+                    <!-- Additional Information -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 col-sm-6">
+                            <label for="customer_name" class="form-label">Customer Name</label>
+                            <input type="text" class="form-control" id="customer_name" name="customer_name" placeholder="Required for credit sales">
                         </div>
                     </div>
 
@@ -241,8 +311,9 @@
                         <textarea class="form-control" id="notes" name="notes" rows="2" placeholder="Optional notes"></textarea>
                     </div>
 
+                    <!-- Sale Calculation Summary -->
                     <div class="alert alert-info" id="saleCalculation" style="display: none;">
-                        <strong>Sale Summary:</strong>
+                        <h6 class="alert-heading mb-2"><i class="fas fa-calculator me-2"></i>Sale Summary</h6>
                         <div id="calculationDetails"></div>
                     </div>
                 </div>
@@ -302,9 +373,20 @@ document.addEventListener('DOMContentLoaded', function() {
             const totalAmount = originalAmount - discountAmount;
 
             calculationDetails.innerHTML = `
-                Original Amount: ${originalAmount.toFixed(2)}<br>
-                Discount: -${discountAmount.toFixed(2)}<br>
-                <strong>Total: ${totalAmount.toFixed(2)}</strong>
+                <div class="row g-2 small">
+                    <div class="col-6 col-sm-4">
+                        <span class="text-muted">Original Amount:</span><br>
+                        <span class="fw-bold">${originalAmount.toFixed(2)}</span>
+                    </div>
+                    <div class="col-6 col-sm-4">
+                        <span class="text-muted">Discount:</span><br>
+                        <span class="text-warning">-${discountAmount.toFixed(2)}</span>
+                    </div>
+                    <div class="col-12 col-sm-4">
+                        <span class="text-muted">Total Amount:</span><br>
+                        <span class="fw-bold fs-6 text-primary">${totalAmount.toFixed(2)}</span>
+                    </div>
+                </div>
             `;
             calculationDiv.style.display = 'block';
 
