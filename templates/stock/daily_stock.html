@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Daily Stock - Liquor Store Management{% endblock %}
+{% block page_title %}Daily Stock Management{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h2>Daily Stock Management</h2>
+            <div class="d-flex align-items-center">
+                <label for="dateSelect" class="form-label me-2">Date:</label>
+                <input type="date" class="form-control" id="dateSelect" value="{{ selected_date.strftime('%Y-%m-%d') }}" 
+                       onchange="window.location.href='{{ url_for('daily_stock') }}?date=' + this.value">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alert container for dynamic messages -->
+<div id="alert-container"></div>
+
+<div class="card">
+    <div class="card-header">
+        <h5><i class="fas fa-clipboard-list me-2"></i>Stock Movement for {{ selected_date.strftime('%B %d, %Y') }}</h5>
+    </div>
+    <div class="card-body">
+        {% if stock_data %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Category</th>
+                        <th>Opening Stock</th>
+                        <th>Additions</th>
+                        <th>Sales</th>
+                        <th>Closing Stock</th>
+                        <th>Current Stock</th>
+                        {% if current_user.role in ['admin', 'manager'] %}
+                        <th>Actions</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for product, category, daily_stock in stock_data %}
+                    <tr>
+                        <td>
+                            <strong>{{ product.name }}</strong><br>
+                            <small class="text-muted">{{ product.base_unit }}</small>
+                        </td>
+                        <td><span class="badge bg-secondary">{{ category.name }}</span></td>
+                        <td>
+                            {% if current_user.role in ['admin', 'manager'] %}
+                            <input type="number" class="form-control form-control-sm stock-input"
+                                   data-product-id="{{ product.id }}" data-field="opening_stock"
+                                   value="{{ daily_stock.opening_stock or 0 }}" step="0.5" min="0">
+                            {% else %}
+                            {{ daily_stock.opening_stock or 0 }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if current_user.role in ['admin', 'manager'] %}
+                            <input type="number" class="form-control form-control-sm stock-input"
+                                   data-product-id="{{ product.id }}" data-field="additions"
+                                   value="{{ daily_stock.additions or 0 }}" step="0.5" min="0">
+                            {% else %}
+                            {{ daily_stock.additions or 0 }}
+                            {% endif %}
+                        </td>
+                        <td>{{ daily_stock.sales_quantity or 0 }}</td>
+                        <td>
+                            <strong class="closing-stock-{{ product.id }}">{{ daily_stock.closing_stock or 0 }}</strong>
+                        </td>
+                        <td>
+                            <span class="text-{{ 'danger' if product.current_stock <= 0 else 'warning' if product.is_low_stock() else 'success' }}">
+                                {{ product.current_stock }}
+                            </span>
+                        </td>
+                        {% if current_user.role in ['admin', 'manager'] %}
+                        <td>
+                            <button class="btn btn-sm btn-success update-stock-btn" data-product-id="{{ product.id }}">
+                                <i class="fas fa-save"></i>
+                            </button>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-center text-muted py-4">No stock data available for this date</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Stock update functionality for daily stock page
+document.addEventListener('DOMContentLoaded', function() {
+    // Function to show alert messages
+    function showAlert(message, type = 'success') {
+        const alertContainer = document.getElementById('alert-container');
+        const alert = document.createElement('div');
+        alert.className = `alert alert-${type} alert-dismissible fade show`;
+        alert.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+
+        // Clear any existing alerts
+        alertContainer.innerHTML = '';
+        alertContainer.appendChild(alert);
+
+        // Auto dismiss after 5 seconds
+        setTimeout(() => {
+            if (alert.parentNode) {
+                alert.remove();
+            }
+        }, 5000);
+    }
+
+    document.querySelectorAll('.update-stock-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const productId = this.dataset.productId;
+            const openingStockInput = document.querySelector(`input[data-product-id="${productId}"][data-field="opening_stock"]`);
+            const additionsInput = document.querySelector(`input[data-product-id="${productId}"][data-field="additions"]`);
+
+            if (!openingStockInput || !additionsInput) {
+                showAlert('Error: Could not find stock input fields', 'danger');
+                return;
+            }
+
+            const openingStock = openingStockInput.value;
+            const additions = additionsInput.value;
+
+            // Disable button during request
+            this.disabled = true;
+            const originalHTML = this.innerHTML;
+            this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            fetch('/update_stock', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    product_id: productId,
+                    date: document.getElementById('dateSelect').value,
+                    opening_stock: parseFloat(openingStock) || 0,
+                    additions: parseFloat(additions) || 0
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    // Update the closing stock display
+                    const closingStockElement = document.querySelector(`.closing-stock-${productId}`);
+                    if (closingStockElement) {
+                        closingStockElement.textContent = data.closing_stock || 0;
+                    }
+
+                    // Show success message
+                    showAlert(data.message || 'Stock updated successfully', 'success');
+                } else {
+                    showAlert('Error: ' + (data.error || 'Unknown error occurred'), 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Error updating stock:', error);
+                showAlert('Error updating stock: ' + error.message, 'danger');
+            })
+            .finally(() => {
+                // Re-enable button
+                this.disabled = false;
+                this.innerHTML = originalHTML;
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

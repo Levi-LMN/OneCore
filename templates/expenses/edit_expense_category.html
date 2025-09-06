@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Expense Category - Liquor Store Management{% endblock %}
+{% block page_title %}Edit Expense Category{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-edit me-2"></i>Edit Expense Category
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" id="editCategoryForm">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">
+                            Category Name <span class="text-danger">*</span>
+                        </label>
+                        <input type="text"
+                               class="form-control"
+                               id="name"
+                               name="name"
+                               value="{{ category.name }}"
+                               required
+                               maxlength="100"
+                               placeholder="e.g., Office Supplies">
+                        <div class="form-text">Choose a clear, descriptive name for this expense category.</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control"
+                                  id="description"
+                                  name="description"
+                                  rows="3"
+                                  maxlength="500"
+                                  placeholder="Optional description of what expenses belong to this category">{{ category.description or '' }}</textarea>
+                        <div class="form-text">Provide additional details about what expenses should be categorized here.</div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <h6 class="card-title">Current Status</h6>
+                                    <span class="badge bg-{{ 'success' if category.is_active else 'secondary' }} fs-6">
+                                        <i class="fas fa-{{ 'check-circle' if category.is_active else 'times-circle' }} me-1"></i>
+                                        {{ 'Active' if category.is_active else 'Inactive' }}
+                                    </span>
+                                    <p class="card-text mt-2 mb-0">
+                                        <small class="text-muted">
+                                            Created by {{ category.creator.full_name if category.creator else 'System' }}
+                                            on {{ category.created_at.strftime('%B %d, %Y') if category.created_at else 'N/A' }}
+                                        </small>
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between mt-4">
+                        <a href="{{ url_for('expense_categories') }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Categories
+                        </a>
+                        <div>
+                            <button type="button"
+                                    class="btn btn-outline-{{ 'secondary' if category.is_active else 'success' }} me-2"
+                                    onclick="toggleStatus({{ category.id }}, '{{ category.name }}', {{ category.is_active|lower }})">
+                                <i class="fas fa-toggle-{{ 'off' if category.is_active else 'on' }} me-2"></i>
+                                {{ 'Deactivate' if category.is_active else 'Activate' }}
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-2"></i>Save Changes
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toggle Status Modal -->
+<div class="modal fade" id="toggleStatusModal" tabindex="-1" aria-labelledby="toggleStatusModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="toggleStatusModalLabel">
+                    <i class="fas fa-toggle-on me-2"></i>Confirm Status Change
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to <strong id="statusAction"></strong> the expense category "<strong id="statusCategoryName"></strong>"?</p>
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <span id="statusWarning"></span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="statusForm" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-warning">
+                        <i class="fas fa-toggle-on me-2"></i>
+                        <span id="statusButtonText">Change Status</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Form validation
+    const form = document.getElementById('editCategoryForm');
+    const nameInput = document.getElementById('name');
+
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            if (!nameInput.value.trim()) {
+                e.preventDefault();
+                alert('Category name is required!');
+                nameInput.focus();
+                return false;
+            }
+        });
+    }
+
+    // Auto-focus on name field
+    if (nameInput) {
+        nameInput.focus();
+        nameInput.select();
+    }
+});
+
+function toggleStatus(categoryId, categoryName, isActive) {
+    const action = isActive ? 'deactivate' : 'activate';
+    const warning = isActive ?
+        'Deactivating this category will prevent it from being used for new expenses.' :
+        'Activating this category will make it available for new expenses.';
+
+    document.getElementById('statusCategoryName').textContent = categoryName;
+    document.getElementById('statusAction').textContent = action;
+    document.getElementById('statusWarning').textContent = warning;
+    document.getElementById('statusButtonText').textContent = isActive ? 'Deactivate' : 'Activate';
+    document.getElementById('statusForm').action = `/toggle_expense_category_status/${categoryId}`;
+
+    const modalEl = document.getElementById('toggleStatusModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+}
+</script>
+{% endblock %}

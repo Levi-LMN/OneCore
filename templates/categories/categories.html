@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% block title %}Categories - Liquor Store Management{% endblock %}
+
+{% block page_title %}Product Categories{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-tags me-2"></i>Product Categories ({{ categories|length }})
+                </h5>
+                <a href="{{ url_for('add_category') }}" class="btn btn-success">
+                    <i class="fas fa-plus me-2"></i>Add Category
+                </a>
+            </div>
+            <div class="card-body">
+                {% if categories %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Products</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Created By</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for category in categories %}
+                            <tr class="{{ 'table-secondary' if not category.is_active }}">
+                                <td>
+                                    <strong>{{ category.name }}</strong>
+                                </td>
+                                <td>
+                                    {% if category.description %}
+                                        <span class="text-muted">{{ category.description }}</span>
+                                    {% else %}
+                                        <em class="text-muted">No description</em>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% set product_count = category.products|selectattr('current_stock')|list|length %}
+                                    <span class="badge bg-{{ 'info' if product_count > 0 else 'secondary' }}">
+                                        {{ product_count }} products
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if category.is_active %}
+                                    <span class="badge bg-success">
+                                        <i class="fas fa-check me-1"></i>Active
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">
+                                        <i class="fas fa-times me-1"></i>Inactive
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <small>{{ category.created_at.strftime('%Y-%m-%d') if category.created_at else 'Unknown' }}</small>
+                                </td>
+                                <td>
+                                    <small>{{ category.creator.full_name if category.creator else 'System' }}</small>
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-primary"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#editCategoryModal"
+                                                data-id="{{ category.id }}"
+                                                data-name="{{ category.name }}"
+                                                data-description="{{ category.description or '' }}"
+                                                title="Edit Category">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+
+                                        {% set has_products = category.products|selectattr('current_stock')|list|length > 0 %}
+                                        {% if not has_products %}
+                                        <form method="POST" action="#" class="d-inline"
+                                              onsubmit="return confirm('Are you sure you want to {{ 'deactivate' if category.is_active else 'activate' }} this category?')">
+                                            <button type="submit" class="btn btn-outline-{{ 'warning' if category.is_active else 'success' }}"
+                                                    title="{{ 'Deactivate' if category.is_active else 'Activate' }} Category">
+                                                <i class="fas fa-{{ 'eye-slash' if category.is_active else 'eye' }}"></i>
+                                            </button>
+                                        </form>
+                                        {% else %}
+                                        <button type="button" class="btn btn-outline-secondary" disabled
+                                                title="Cannot deactivate - category has products">
+                                            <i class="fas fa-lock"></i>
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Summary Statistics -->
+                <div class="row mt-4">
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <h5 class="text-primary">{{ categories|selectattr('is_active')|list|length }}</h5>
+                            <small class="text-muted">Active Categories</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            {% set total_products = 0 %}
+                            {% for category in categories %}
+                                {% if category.is_active %}
+                                    {% set total_products = total_products + (category.products|length) %}
+                                {% endif %}
+                            {% endfor %}
+                            <h5 class="text-info">{{ total_products }}</h5>
+                            <small class="text-muted">Total Products</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            {% set categories_with_products = 0 %}
+                            {% for category in categories %}
+                                {% if category.is_active and category.products|length > 0 %}
+                                    {% set categories_with_products = categories_with_products + 1 %}
+                                {% endif %}
+                            {% endfor %}
+                            <h5 class="text-success">{{ categories_with_products }}</h5>
+                            <small class="text-muted">Categories with Products</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <h5 class="text-secondary">{{ categories|rejectattr('is_active')|list|length }}</h5>
+                            <small class="text-muted">Inactive Categories</small>
+                        </div>
+                    </div>
+                </div>
+
+                {% else %}
+                <!-- Empty State -->
+                <div class="text-center py-5">
+                    <div class="mb-4">
+                        <i class="fas fa-tags text-muted" style="font-size: 3rem;"></i>
+                    </div>
+                    <h5 class="text-muted mb-3">No Categories Found</h5>
+                    <p class="text-muted mb-4">
+                        Categories help organize your products. Create your first category to get started.
+                    </p>
+                    <a href="{{ url_for('add_category') }}" class="btn btn-success">
+                        <i class="fas fa-plus me-2"></i>Create First Category
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Category Modal -->
+<div class="modal fade" id="editCategoryModal" tabindex="-1" aria-labelledby="editCategoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editCategoryModalLabel">
+                    <i class="fas fa-edit me-2"></i>Edit Category
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="#" id="editCategoryForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="edit_name" class="form-label">Category Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="edit_name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="edit_description" class="form-label">Description</label>
+                        <textarea class="form-control" id="edit_description" name="description" rows="3"
+                                  placeholder="Optional description for this category"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-save me-2"></i>Update Category
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle edit category modal
+    const editModal = document.getElementById('editCategoryModal');
+    const editForm = document.getElementById('editCategoryForm');
+
+    editModal.addEventListener('show.bs.modal', function(event) {
+        const button = event.relatedTarget;
+        const categoryId = button.getAttribute('data-id');
+        const categoryName = button.getAttribute('data-name');
+        const categoryDescription = button.getAttribute('data-description');
+
+        // Update form action URL (you'll need to implement the edit_category route)
+        editForm.action = `/edit_category/${categoryId}`;
+
+        // Populate form fields
+        document.getElementById('edit_name').value = categoryName;
+        document.getElementById('edit_description').value = categoryDescription;
+    });
+});
+</script>
+{% endblock %}

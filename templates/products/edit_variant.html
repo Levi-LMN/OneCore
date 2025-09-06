@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Variant - {{ variant.get_display_name() }} - Liquor Store Management{% endblock %}
+
+{% block page_title %}Edit Product Variant{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-edit me-2"></i>Edit Variant: {{ variant.get_display_name() }}
+                </h5>
+            </div>
+            <div class="card-body">
+                <!-- Product Information -->
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="border rounded p-3 bg-light">
+                            <h6 class="text-muted mb-2">Product Information</h6>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <p class="mb-1"><strong>Product:</strong> {{ variant.product.name }}</p>
+                                    <p class="mb-1"><strong>Category:</strong> {{ variant.product.category.name }}</p>
+                                    <p class="mb-0"><strong>Base Unit:</strong> {{ variant.product.base_unit }}</p>
+                                </div>
+                                <div class="col-md-6">
+                                    <p class="mb-1"><strong>Base Buying Price:</strong> {{ format_currency(variant.product.base_buying_price) }}</p>
+                                    <p class="mb-1"><strong>Current Stock:</strong> 
+                                        <span class="badge bg-{{ get_stock_status_color(variant.product.current_stock, variant.product.min_stock_level) }}">
+                                            {{ variant.product.current_stock }} {{ variant.product.base_unit }}s
+                                        </span>
+                                    </p>
+                                    <p class="mb-0"><strong>Current Size:</strong> {{ variant.size.name }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Edit Form -->
+                <form method="POST" action="{{ url_for('edit_variant', variant_id=variant.id) }}">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="selling_price" class="form-label">Selling Price (KES) <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="selling_price" name="selling_price" 
+                                       step="0.01" min="0.01" value="{{ variant.selling_price }}" required>
+                                <div class="form-text">Price customers will pay for this variant</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="conversion_factor" class="form-label">Conversion Factor <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="conversion_factor" name="conversion_factor" 
+                                       step="0.01" min="0.01" value="{{ variant.conversion_factor }}" required>
+                                <div class="form-text">
+                                    How many base units ({{ variant.product.base_unit }}s) this variant represents
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Current Profit Calculation</label>
+                                <div class="border rounded p-3 bg-light">
+                                    <div id="current-profit">
+                                        {% set current_profit = variant.get_profit_per_unit() %}
+                                        {% set current_margin = ((current_profit / variant.selling_price) * 100) if variant.selling_price > 0 else 0 %}
+                                        <div class="small">
+                                            <div><strong>Current cost per unit:</strong> KES {{ (variant.product.base_buying_price * variant.conversion_factor)|round(2) }}</div>
+                                            <div><strong>Current profit per unit:</strong> 
+                                                <span class="{{ 'text-success' if current_profit >= 0 else 'text-danger' }}">
+                                                    {{ format_currency(current_profit) }}
+                                                </span>
+                                            </div>
+                                            <div><strong>Current profit margin:</strong> 
+                                                <span class="{{ 'text-success' if current_margin >= 0 else 'text-danger' }}">
+                                                    {{ current_margin|round(1) }}%
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">New Profit Calculation</label>
+                                <div class="border rounded p-3 bg-light">
+                                    <div id="new-profit-calculation">
+                                        <small class="text-muted">Make changes to see updated profit calculation</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-save me-2"></i>Update Variant
+                        </button>
+                        <a href="{{ url_for('product_variants', product_id=variant.product_id) }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Variants
+                        </a>
+                        <a href="{{ url_for('products') }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-boxes me-2"></i>All Products
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <!-- Variant Information -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Variant Information
+                </h6>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tbody>
+                        <tr>
+                            <td><strong>Created:</strong></td>
+                            <td>{{ variant.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        </tr>
+                        {% if variant.creator %}
+                        <tr>
+                            <td><strong>Created by:</strong></td>
+                            <td>{{ variant.creator.full_name }}</td>
+                        </tr>
+                        {% endif %}
+                        <tr>
+                            <td><strong>Status:</strong></td>
+                            <td>
+                                <span class="badge bg-{{ 'success' if variant.is_active else 'secondary' }}">
+                                    {{ 'Active' if variant.is_active else 'Inactive' }}
+                                </span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>Available Units:</strong></td>
+                            <td>{{ variant.get_available_stock_in_variant_units() }} units</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Help Card -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-question-circle me-2"></i>Editing Guidelines
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <h6 class="text-primary">Conversion Factor:</h6>
+                    <ul class="list-unstyled small">
+                        <li><strong>For tots:</strong> Usually 0.04 (25 tots per bottle)</li>
+                        <li><strong>For half bottles:</strong> 0.5</li>
+                        <li><strong>For whole bottles:</strong> 1.0</li>
+                        <li><strong>For cases:</strong> 12.0 (12 bottles per case)</li>
+                    </ul>
+                </div>
+                
+                <div class="alert alert-warning small mb-0">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Warning:</strong> Changing the conversion factor will affect all future 
+                    stock calculations. Only change if you're sure about the new ratio.
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Actions -->
+        {% if current_user.role in ['admin', 'manager'] %}
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-cogs me-2"></i>Variant Actions
+                </h6>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('toggle_variant_status', variant_id=variant.id) }}" 
+                      onsubmit="return confirm('Are you sure you want to {{ 'deactivate' if variant.is_active else 'activate' }} this variant?')">
+                    <button type="submit" class="btn btn-{{ 'warning' if variant.is_active else 'success' }} btn-sm w-100">
+                        <i class="fas fa-{{ 'eye-slash' if variant.is_active else 'eye' }} me-2"></i>
+                        {{ 'Deactivate' if variant.is_active else 'Activate' }} Variant
+                    </button>
+                </form>
+                <small class="text-muted mt-2 d-block">
+                    {{ 'Deactivating will hide this variant from sales' if variant.is_active else 'Activating will make this variant available for sales' }}
+                </small>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const sellingPriceInput = document.getElementById('selling_price');
+    const conversionFactorInput = document.getElementById('conversion_factor');
+    const newProfitCalculation = document.getElementById('new-profit-calculation');
+    
+    const baseBuyingPrice = {{ variant.product.base_buying_price }};
+    
+    function calculateNewProfit() {
+        const sellingPrice = parseFloat(sellingPriceInput.value) || 0;
+        const conversionFactor = parseFloat(conversionFactorInput.value) || 1;
+        
+        if (sellingPrice > 0 && conversionFactor > 0) {
+            const costPerVariant = baseBuyingPrice * conversionFactor;
+            const profitPerUnit = sellingPrice - costPerVariant;
+            const profitMargin = ((profitPerUnit / sellingPrice) * 100);
+            
+            let html = `
+                <div class="small">
+                    <div><strong>New cost per unit:</strong> KES ${costPerVariant.toFixed(2)}</div>
+                    <div><strong>New profit per unit:</strong> 
+                        <span class="${profitPerUnit >= 0 ? 'text-success' : 'text-danger'}">
+                            KES ${profitPerUnit.toFixed(2)}
+                        </span>
+                    </div>
+                    <div><strong>New profit margin:</strong> 
+                        <span class="${profitMargin >= 0 ? 'text-success' : 'text-danger'}">
+                            ${profitMargin.toFixed(1)}%
+                        </span>
+                    </div>
+                </div>
+            `;
+            
+            if (profitPerUnit < 0) {
+                html += '<div class="text-danger small mt-2"><i class="fas fa-exclamation-triangle me-1"></i>Warning: These changes will result in a loss!</div>';
+            }
+            
+            // Show difference from current
+            const currentProfit = {{ variant.get_profit_per_unit() }};
+            const profitDiff = profitPerUnit - currentProfit;
+            if (Math.abs(profitDiff) > 0.01) {
+                const diffClass = profitDiff > 0 ? 'text-success' : 'text-danger';
+                const diffIcon = profitDiff > 0 ? 'arrow-up' : 'arrow-down';
+                html += `<div class="${diffClass} small mt-2">
+                    <i class="fas fa-${diffIcon} me-1"></i>
+                    ${profitDiff > 0 ? '+' : ''}${profitDiff.toFixed(2)} change in profit per unit
+                </div>`;
+            }
+            
+            newProfitCalculation.innerHTML = html;
+        } else {
+            newProfitCalculation.innerHTML = '<small class="text-muted">Make changes to see updated profit calculation</small>';
+        }
+    }
+    
+    sellingPriceInput.addEventListener('input', calculateNewProfit);
+    conversionFactorInput.addEventListener('input', calculateNewProfit);
+    
+    // Initial calculation
+    calculateNewProfit();
+});
+</script>
+{% endblock %}

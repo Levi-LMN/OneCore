@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Product Variants - {{ product.name }}{% endblock %}
+{% block page_title %}{{ product.name }} - Variants{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h3>{{ product.name }}</h3>
+                <p class="text-muted">Category: {{ product.category.name }} | Base Unit: {{ product.base_unit }} | Base Price: {{ format_currency(product.base_buying_price) }}</p>
+            </div>
+            {% if current_user.role in ['admin', 'manager'] %}
+            <a href="{{ url_for('add_variant', product_id=product.id) }}" class="btn btn-primary">
+                <i class="fas fa-plus me-2"></i>Add Variant
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h5><i class="fas fa-cogs me-2"></i>Product Variants</h5>
+    </div>
+    <div class="card-body">
+        {% if variants %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Size</th>
+                        <th>Selling Price</th>
+                        <th>Conversion Factor</th>
+                        <th>Available Quantity</th>
+                        <th>Profit per Unit</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for variant, size in variants %}
+                    <tr class="{{ 'table-secondary' if not variant.is_active }}">
+                        <td>
+                            <strong>{{ size.name }}</strong>
+                            {% if size.description %}
+                            <br><small class="text-muted">{{ size.description }}</small>
+                            {% endif %}
+                        </td>
+                        <td>{{ format_currency(variant.selling_price) }}</td>
+                        <td>{{ variant.conversion_factor }}</td>
+                        <td>
+                            <span class="badge bg-{{ 'success' if variant.get_available_stock_in_variant_units() > 0 else 'danger' }}">
+                                {{ variant.get_available_stock_in_variant_units() }}
+                            </span>
+                        </td>
+                        <td>{{ format_currency(variant.get_profit_per_unit()) }}</td>
+                        <td>
+                            <span class="badge bg-{{ 'success' if variant.is_active else 'secondary' }}">
+                                {{ 'Active' if variant.is_active else 'Inactive' }}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                {% if current_user.role in ['admin', 'manager'] %}
+                                <a href="{{ url_for('edit_variant', variant_id=variant.id) }}" class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <form method="POST" action="{{ url_for('toggle_variant_status', variant_id=variant.id) }}" style="display: inline;">
+                                    <button type="submit" class="btn btn-outline-{{ 'warning' if variant.is_active else 'success' }} btn-sm"
+                                            title="{{ 'Deactivate' if variant.is_active else 'Activate' }}">
+                                        <i class="fas fa-{{ 'pause' if variant.is_active else 'play' }}"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-center text-muted py-4">No variants created for this product yet</p>
+        {% endif %}
+        
+        <div class="mt-3">
+            <a href="{{ url_for('products') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left me-2"></i>Back to Products
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

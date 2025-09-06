@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}LiquorPro{% endblock %}</title>
+
+    <!-- Preload critical resources -->
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+
+    <!-- Critical CSS loaded first -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+    <style>
+        :root {
+            --sidebar-width: 240px;
+            --header-height: 80px;
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --sidebar-bg: #1f2937;
+            --sidebar-hover: #374151;
+            --text-light: #d1d5db;
+            --border: #e5e7eb;
+            --bg-light: #f9fafb;
+            --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+            --radius: 6px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-light);
+            line-height: 1.6;
+            font-size: 14px;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Mobile Overlay */
+        .mobile-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 998;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s ease;
+        }
+
+        .mobile-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: var(--sidebar-width);
+            height: 100vh;
+            background: var(--sidebar-bg);
+            z-index: 999;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+            overflow-y: auto;
+            scrollbar-width: thin;
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .sidebar::-webkit-scrollbar-track {
+            background: var(--sidebar-bg);
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: var(--sidebar-hover);
+            border-radius: 2px;
+        }
+
+        .sidebar.open {
+            transform: translateX(0);
+        }
+
+        .sidebar.desktop-closed {
+            transform: translateX(-100%) !important;
+        }
+
+        .sidebar-header {
+            height: var(--header-height);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 1rem;
+            border-bottom: 1px solid #374151;
+            background: #111827;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            color: white;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1rem;
+            gap: 0.5rem;
+        }
+
+        .logo-icon {
+            width: 24px;
+            height: 24px;
+            background: var(--primary);
+            border-radius: var(--radius);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: var(--text-light);
+            font-size: 1rem;
+            cursor: pointer;
+            padding: 0.25rem;
+            border-radius: var(--radius);
+            transition: background 0.2s;
+        }
+
+        .close-btn:hover {
+            background: var(--sidebar-hover);
+        }
+
+        /* Navigation */
+        .nav-menu {
+            padding: 0.5rem 0;
+        }
+
+        .nav-section {
+            margin-bottom: 1rem;
+        }
+
+        .nav-title {
+            padding: 0.5rem 1rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #9ca3af;
+            letter-spacing: 0.5px;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            padding: 0.65rem 1rem;
+            color: var(--text-light);
+            text-decoration: none;
+            transition: all 0.2s ease;
+            margin: 0 0.5rem;
+            border-radius: var(--radius);
+            font-size: 0.85rem;
+            gap: 0.6rem;
+        }
+
+        .nav-link:hover {
+            background: var(--sidebar-hover);
+            color: white;
+        }
+
+        .nav-link.active {
+            background: var(--primary);
+            color: white;
+        }
+
+        .nav-icon {
+            width: 16px;
+            font-size: 0.9rem;
+        }
+
+        /* Main Layout */
+        .main-wrapper {
+            transition: margin-left 0.3s ease;
+        }
+
+        .main-wrapper.sidebar-open {
+            margin-left: var(--sidebar-width);
+        }
+
+        /* Header */
+        .main-header {
+            height: var(--header-height);
+            background: white;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem;
+            box-shadow: var(--shadow);
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .menu-btn {
+            background: none;
+            border: none;
+            font-size: 1.1rem;
+            color: #374151;
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: var(--radius);
+            transition: background 0.2s;
+        }
+
+        .menu-btn:hover {
+            background: var(--bg-light);
+        }
+
+        .page-info {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-height: 60px;
+        }
+
+        .page-info h1 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #111827;
+            margin: 0;
+            line-height: 1.4;
+            padding: 4px 0;
+        }
+
+        .breadcrumb {
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-top: 3px;
+            line-height: 1.3;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        /* Search */
+        .search-container {
+            position: relative;
+            width: 200px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 0.4rem 0.8rem 0.4rem 2rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            font-size: 0.8rem;
+            background: var(--bg-light);
+            transition: border-color 0.2s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 0.6rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+            font-size: 0.8rem;
+        }
+
+        /* User Menu */
+        .user-menu {
+            position: relative;
+        }
+
+        .user-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: none;
+            border: none;
+            padding: 0.4rem 0.6rem;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .user-btn:hover {
+            background: var(--bg-light);
+        }
+
+        .user-avatar {
+            width: 24px;
+            height: 24px;
+            background: var(--primary);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .user-name {
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-lg);
+            min-width: 160px;
+            padding: 0.25rem 0;
+            margin-top: 0.25rem;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-8px);
+            transition: all 0.2s ease;
+        }
+
+        .dropdown.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .dropdown-link {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem 0.8rem;
+            color: #374151;
+            text-decoration: none;
+            font-size: 0.8rem;
+            gap: 0.5rem;
+            transition: background 0.2s;
+        }
+
+        .dropdown-link:hover {
+            background: var(--bg-light);
+            color: #374151;
+        }
+
+        .dropdown-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 0.25rem 0;
+        }
+
+        .dropdown-link.danger {
+            color: #dc2626;
+        }
+
+        .dropdown-link.danger:hover {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+
+        /* Content Area */
+        .content {
+            padding: 1rem;
+            padding-top: calc(var(--header-height) + 1rem);
+            min-height: calc(100vh - var(--header-height));
+        }
+
+        /* Alerts */
+        .alert {
+            padding: 0.8rem 1rem;
+            border-radius: var(--radius);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.6rem;
+            font-size: 0.8rem;
+            border: none;
+            position: relative;
+        }
+
+        .alert-success {
+            background: #f0fdf4;
+            color: #166534;
+            border-left: 3px solid #22c55e;
+        }
+
+        .alert-danger {
+            background: #fef2f2;
+            color: #dc2626;
+            border-left: 3px solid #ef4444;
+        }
+
+        .alert-warning {
+            background: #fffbeb;
+            color: #d97706;
+            border-left: 3px solid #f59e0b;
+        }
+
+        .alert-info {
+            background: #eff6ff;
+            color: #2563eb;
+            border-left: 3px solid #3b82f6;
+        }
+
+        .alert-close {
+            position: absolute;
+            top: 0.6rem;
+            right: 0.8rem;
+            background: none;
+            border: none;
+            cursor: pointer;
+            opacity: 0.5;
+            font-size: 0.9rem;
+            color: currentColor;
+            transition: opacity 0.2s;
+        }
+
+        .alert-close:hover {
+            opacity: 1;
+        }
+
+        /* Performance optimizations for mobile */
+        @media (max-width: 768px) {
+            .search-container {
+                width: 140px;
+            }
+
+            .user-name {
+                display: none;
+            }
+
+            .content {
+                padding: 0.75rem;
+            }
+
+            .page-info h1 {
+                font-size: 1.1rem;
+            }
+
+            .breadcrumb {
+                font-size: 0.7rem;
+            }
+
+            /* Optimize animations for mobile */
+            .sidebar {
+                will-change: transform;
+            }
+        }
+
+        /* Desktop optimizations */
+        @media (min-width: 1024px) {
+            .main-wrapper {
+                margin-left: var(--sidebar-width);
+                transition: margin-left 0.3s ease;
+            }
+
+            .main-wrapper.sidebar-closed {
+                margin-left: 0;
+            }
+
+            .sidebar {
+                transform: translateX(0);
+            }
+
+            .main-header {
+                left: var(--sidebar-width);
+                transition: left 0.3s ease;
+            }
+
+            .main-wrapper.sidebar-closed .main-header {
+                left: 0;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .main-header {
+                padding: 0 0.75rem;
+            }
+
+            .header-right {
+                gap: 0.5rem;
+            }
+
+            .search-container {
+                width: 120px;
+            }
+
+            .content {
+                padding: 0.5rem;
+            }
+        }
+
+        /* Loading state */
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        /* Reduce motion for accessibility */
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Mobile Overlay -->
+    <div class="mobile-overlay" id="mobileOverlay"></div>
+
+    <!-- Sidebar -->
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <a href="{{ url_for('dashboard') if url_for else '#' }}" class="logo">
+                <div class="logo-icon">
+                    <i class="fas fa-wine-bottle"></i>
+                </div>
+                <span>LiquorPro</span>
+            </a>
+            <button class="close-btn" id="closeSidebar" aria-label="Close sidebar">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <div class="nav-menu">
+            <div class="nav-section">
+                <div class="nav-title">Core</div>
+                <a href="{{ url_for('dashboard') if url_for else '#' }}" class="nav-link {{ 'active' if request.endpoint == 'dashboard' }}">
+                    <i class="fas fa-chart-pie nav-icon"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="{{ url_for('sales') if url_for else '#' }}" class="nav-link {{ 'active' if 'sales' in request.endpoint }}">
+                    <i class="fas fa-cash-register nav-icon"></i>
+                    <span>Point of Sale</span>
+                </a>
+                <a href="{{ url_for('daily_stock') if url_for else '#' }}" class="nav-link {{ 'active' if 'daily_stock' in request.endpoint }}">
+                    <i class="fas fa-clipboard-check nav-icon"></i>
+                    <span>Daily Stock</span>
+                </a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-title">Inventory</div>
+                <a href="{{ url_for('products') if url_for else '#' }}" class="nav-link {{ 'active' if 'products' in request.endpoint }}">
+                    <i class="fas fa-boxes nav-icon"></i>
+                    <span>Products</span>
+                </a>
+                <a href="{{ url_for('categories') if url_for else '#' }}" class="nav-link {{ 'active' if 'categories' in request.endpoint }}">
+                    <i class="fas fa-layer-group nav-icon"></i>
+                    <span>Categories</span>
+                </a>
+                <a href="{{ url_for('sizes') if url_for else '#' }}" class="nav-link {{ 'active' if 'sizes' in request.endpoint }}">
+                    <i class="fas fa-expand-arrows-alt nav-icon"></i>
+                    <span>Sizes</span>
+                </a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-title">Financial</div>
+                <a href="{{ url_for('expenses') if url_for else '#' }}" class="nav-link {{ 'active' if 'expenses' in request.endpoint }}">
+                    <i class="fas fa-receipt nav-icon"></i>
+                    <span>Expenses</span>
+                </a>
+                <a href="{{ url_for('expense_categories') if url_for else '#' }}" class="nav-link {{ 'active' if 'expense_categories' in request.endpoint }}">
+                    <i class="fas fa-tags nav-icon"></i>
+                    <span>Expense Categories</span>
+                </a>
+                <a href="{{ url_for('reports') if url_for else '#' }}" class="nav-link {{ 'active' if 'reports' in request.endpoint }}">
+                    <i class="fas fa-chart-line nav-icon"></i>
+                    <span>Reports</span>
+                </a>
+            </div>
+
+            {% if current_user and current_user.role in ['admin', 'manager'] %}
+            <div class="nav-section">
+                <div class="nav-title">Admin</div>
+                <a href="{{ url_for('users') if url_for else '#' }}" class="nav-link {{ 'active' if 'users' in request.endpoint }}">
+                    <i class="fas fa-users-cog nav-icon"></i>
+                    <span>User Management</span>
+                </a>
+                {% if current_user.role == 'admin' %}
+                <a href="{{ url_for('audit_logs') if url_for else '#' }}" class="nav-link {{ 'active' if 'audit_logs' in request.endpoint }}">
+                    <i class="fas fa-shield-alt nav-icon"></i>
+                    <span>Audit Logs</span>
+                </a>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-wrapper" id="mainWrapper">
+        <!-- Header -->
+        <header class="main-header">
+            <div class="header-left">
+                <button class="menu-btn" id="menuBtn" aria-label="Toggle menu">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="page-info">
+                    <h1>{% block page_title %}Dashboard{% endblock %}</h1>
+                    <div class="breadcrumb">{% block breadcrumb %}Home / Dashboard{% endblock %}</div>
+                </div>
+            </div>
+
+            <div class="header-right">
+                <div class="search-container">
+                    <input type="text" class="search-input" placeholder="Search..." aria-label="Search">
+                    <i class="fas fa-search search-icon"></i>
+                </div>
+
+                <div class="user-menu">
+                    <button class="user-btn" id="userBtn" aria-label="User menu">
+                        <div class="user-avatar">{{ current_user.full_name[0].upper() if current_user and current_user.full_name else 'U' }}</div>
+                        <span class="user-name">{{ current_user.full_name if current_user and current_user.full_name else (current_user.username if current_user else 'User') }}</span>
+                        <i class="fas fa-chevron-down" style="font-size: 0.6rem; color: #9ca3af;"></i>
+                    </button>
+
+                    <div class="dropdown" id="userDropdown">
+                        <a href="{{ url_for('profile') if url_for else '#' }}" class="dropdown-link">
+                            <i class="fas fa-user"></i>
+                            Profile
+                        </a>
+                        <a href="#" class="dropdown-link">
+                            <i class="fas fa-cog"></i>
+                            Settings
+                        </a>
+                        <div class="dropdown-divider"></div>
+                        <a href="{{ url_for('logout') if url_for else '#' }}" class="dropdown-link danger">
+                            <i class="fas fa-sign-out-alt"></i>
+                            Sign Out
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content -->
+        <main class="content">
+            <!-- Flash Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }}" role="alert">
+                            {% if category == 'success' %}
+                                <i class="fas fa-check-circle"></i>
+                            {% elif category == 'error' or category == 'danger' %}
+                                <i class="fas fa-exclamation-triangle"></i>
+                            {% elif category == 'warning' %}
+                                <i class="fas fa-exclamation-circle"></i>
+                            {% else %}
+                                <i class="fas fa-info-circle"></i>
+                            {% endif %}
+                            <div>
+                                <strong>
+                                    {% if category == 'success' %}Success!
+                                    {% elif category == 'error' or category == 'danger' %}Error!
+                                    {% elif category == 'warning' %}Warning!
+                                    {% else %}Info!
+                                    {% endif %}
+                                </strong>
+                                {{ message }}
+                            </div>
+                            <button class="alert-close" onclick="this.parentElement.remove()" aria-label="Close alert">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- Load Bootstrap JS and dependencies at the end for better performance -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // Optimized sidebar and UI management
+        (function() {
+            'use strict';
+
+            // Cache DOM elements
+            const elements = {
+                sidebar: document.getElementById('sidebar'),
+                mainWrapper: document.getElementById('mainWrapper'),
+                overlay: document.getElementById('mobileOverlay'),
+                menuBtn: document.getElementById('menuBtn'),
+                closeBtn: document.getElementById('closeSidebar'),
+                userBtn: document.getElementById('userBtn'),
+                userDropdown: document.getElementById('userDropdown')
+            };
+
+            let sidebarOpen = false;
+            let resizeTimer;
+
+            // Initialize sidebar state
+            function initSidebar() {
+                if (window.innerWidth >= 1024) {
+                    openSidebar(false);
+                } else {
+                    closeSidebar(false);
+                }
+            }
+
+            // Open sidebar
+            function openSidebar(animate = true) {
+                if (!animate) {
+                    elements.sidebar.style.transition = 'none';
+                    elements.mainWrapper.style.transition = 'none';
+                }
+
+                elements.sidebar.classList.add('open');
+                elements.sidebar.classList.remove('desktop-closed');
+                sidebarOpen = true;
+
+                if (window.innerWidth < 1024) {
+                    elements.overlay.classList.add('active');
+                    document.body.style.overflow = 'hidden';
+                } else {
+                    elements.mainWrapper.classList.add('sidebar-open');
+                    elements.mainWrapper.classList.remove('sidebar-closed');
+                }
+
+                if (!animate) {
+                    // Restore transitions after a frame
+                    requestAnimationFrame(() => {
+                        elements.sidebar.style.transition = '';
+                        elements.mainWrapper.style.transition = '';
+                    });
+                }
+            }
+
+            // Close sidebar
+            function closeSidebar(animate = true) {
+                if (!animate) {
+                    elements.sidebar.style.transition = 'none';
+                    elements.mainWrapper.style.transition = 'none';
+                }
+
+                sidebarOpen = false;
+                elements.overlay.classList.remove('active');
+                document.body.style.overflow = '';
+
+                if (window.innerWidth >= 1024) {
+                    elements.sidebar.classList.remove('open');
+                    elements.sidebar.classList.add('desktop-closed');
+                    elements.mainWrapper.classList.remove('sidebar-open');
+                    elements.mainWrapper.classList.add('sidebar-closed');
+                } else {
+                    elements.sidebar.classList.remove('open');
+                    elements.sidebar.classList.remove('desktop-closed');
+                    elements.mainWrapper.classList.remove('sidebar-closed');
+                }
+
+                if (!animate) {
+                    requestAnimationFrame(() => {
+                        elements.sidebar.style.transition = '';
+                        elements.mainWrapper.style.transition = '';
+                    });
+                }
+            }
+
+            // Toggle sidebar
+            function toggleSidebar() {
+                if (sidebarOpen) {
+                    closeSidebar();
+                } else {
+                    openSidebar();
+                }
+            }
+
+            // Event listeners
+            if (elements.menuBtn) {
+                elements.menuBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    toggleSidebar();
+                });
+            }
+
+            if (elements.closeBtn) {
+                elements.closeBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    closeSidebar();
+                });
+            }
+
+            if (elements.overlay) {
+                elements.overlay.addEventListener('click', () => {
+                    closeSidebar();
+                });
+            }
+
+            // User dropdown
+            if (elements.userBtn && elements.userDropdown) {
+                elements.userBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    elements.userDropdown.classList.toggle('show');
+                });
+
+                // Close dropdown when clicking outside
+                document.addEventListener('click', (e) => {
+                    if (!elements.userBtn.contains(e.target)) {
+                        elements.userDropdown.classList.remove('show');
+                    }
+                });
+            }
+
+            // Close sidebar on nav link click (mobile only)
+            const navLinks = document.querySelectorAll('.nav-link');
+            navLinks.forEach(link => {
+                link.addEventListener('click', () => {
+                    if (window.innerWidth < 1024 && sidebarOpen) {
+                        setTimeout(closeSidebar, 100);
+                    }
+                });
+            });
+
+            // Optimized resize handler
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(() => {
+                    if (window.innerWidth >= 1024) {
+                        if (!sidebarOpen) {
+                            openSidebar(false);
+                        }
+                        elements.mainWrapper.classList.add('sidebar-open');
+                        elements.overlay.classList.remove('active');
+                        document.body.style.overflow = '';
+                    } else {
+                        elements.mainWrapper.classList.remove('sidebar-open');
+                        if (!sidebarOpen) {
+                            elements.overlay.classList.remove('active');
+                            document.body.style.overflow = '';
+                        }
+                    }
+                }, 100);
+            });
+
+            // ESC key handler
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    closeSidebar();
+                    if (elements.userDropdown) {
+                        elements.userDropdown.classList.remove('show');
+                    }
+                }
+            });
+
+            // Auto-hide alerts
+            const alerts = document.querySelectorAll('.alert');
+            if (alerts.length > 0) {
+                setTimeout(() => {
+                    alerts.forEach(alert => {
+                        alert.style.opacity = '0';
+                        alert.style.transition = 'opacity 0.3s ease';
+                        setTimeout(() => {
+                            if (alert.parentNode) {
+                                alert.parentNode.removeChild(alert);
+                            }
+                        }, 300);
+                    });
+                }, 4000);
+            }
+
+            // Initialize on DOM loaded
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initSidebar);
+            } else {
+                initSidebar();
+            }
+        })();
+    </script>
+
+    <!-- Block for additional scripts -->
+    {% block scripts %}{% endblock %}
+</body>
+</html>

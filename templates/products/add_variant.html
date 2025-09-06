@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}Add Product Variant - Liquor Store Management{% endblock %}
+
+{% block page_title %}Add Product Variant{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-plus-circle me-2"></i>Add New Variant for "{{ product.name }}"
+                </h5>
+            </div>
+            <div class="card-body">
+                <!-- Product Information -->
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="border rounded p-3 bg-light">
+                            <h6 class="text-muted mb-2">Product Details</h6>
+                            <p class="mb-1"><strong>Name:</strong> {{ product.name }}</p>
+                            <p class="mb-1"><strong>Category:</strong> {{ product.category.name }}</p>
+                            <p class="mb-1"><strong>Base Unit:</strong> {{ product.base_unit }}</p>
+                            <p class="mb-1"><strong>Base Buying Price:</strong> {{ format_currency(product.base_buying_price) }}</p>
+                            <p class="mb-0"><strong>Current Stock:</strong> 
+                                <span class="badge bg-{{ get_stock_status_color(product.current_stock, product.min_stock_level) }}">
+                                    {{ product.current_stock }} {{ product.base_unit }}s
+                                </span>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Variant Form -->
+                <form method="POST" action="{{ url_for('add_variant', product_id=product.id) }}">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="size_id" class="form-label">Size <span class="text-danger">*</span></label>
+                                <select class="form-select" id="size_id" name="size_id" required>
+                                    <option value="">Select a size...</option>
+                                    {% for size in sizes %}
+                                        <option value="{{ size.id }}">{{ size.name }}{% if size.description %} - {{ size.description }}{% endif %}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text">Choose the size/packaging for this variant</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="selling_price" class="form-label">Selling Price (KES) <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="selling_price" name="selling_price" 
+                                       step="0.01" min="0.01" placeholder="0.00" required>
+                                <div class="form-text">Price customers will pay for this variant</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="conversion_factor" class="form-label">Conversion Factor <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="conversion_factor" name="conversion_factor" 
+                                       step="0.01" min="0.01" value="1.0" required>
+                                <div class="form-text">
+                                    How many base units ({{ product.base_unit }}s) this variant represents.<br>
+                                    <small class="text-muted">Example: If selling tots from a bottle, and 1 bottle = 25 tots, enter 0.04 (1/25)</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Profit Calculation</label>
+                                <div class="border rounded p-3 bg-light">
+                                    <div id="profit-calculation">
+                                        <small class="text-muted">Enter selling price and conversion factor to see profit calculation</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-plus me-2"></i>Add Variant
+                        </button>
+                        <a href="{{ url_for('product_variants', product_id=product.id) }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Variants
+                        </a>
+                        <a href="{{ url_for('products') }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-boxes me-2"></i>All Products
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <!-- Help Card -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-info-circle me-2"></i>How Product Variants Work
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <h6 class="text-primary">Conversion Factor Examples:</h6>
+                    <ul class="list-unstyled small">
+                        <li><strong>Selling whole bottles:</strong> 1.0</li>
+                        <li><strong>Selling tots (1 bottle = 25 tots):</strong> 0.04</li>
+                        <li><strong>Selling half bottles:</strong> 0.5</li>
+                        <li><strong>Selling cases (1 case = 12 bottles):</strong> 12.0</li>
+                    </ul>
+                </div>
+                
+                <div class="mb-3">
+                    <h6 class="text-primary">Stock Management:</h6>
+                    <p class="small mb-0">
+                        Your base stock is tracked in {{ product.base_unit }}s. When you sell variants, 
+                        the system automatically converts to base units using the conversion factor.
+                    </p>
+                </div>
+
+                <div class="alert alert-info small mb-0">
+                    <i class="fas fa-lightbulb me-2"></i>
+                    <strong>Tip:</strong> Set realistic conversion factors. If unsure, ask your manager 
+                    or calculate: (1 ÷ number of variants per base unit).
+                </div>
+            </div>
+        </div>
+
+        <!-- Existing Variants -->
+        {% if product.variants %}
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-list me-2"></i>Existing Variants
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    {% for variant in product.get_active_variants() %}
+                    <div class="list-group-item px-0 py-2">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="mb-1">{{ variant.size.name }}</h6>
+                                <small class="text-muted">
+                                    {{ format_currency(variant.selling_price) }} 
+                                    (Factor: {{ variant.conversion_factor }})
+                                </small>
+                            </div>
+                            <span class="badge bg-success">Active</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const sellingPriceInput = document.getElementById('selling_price');
+    const conversionFactorInput = document.getElementById('conversion_factor');
+    const profitCalculation = document.getElementById('profit-calculation');
+    
+    const baseBuyingPrice = {{ product.base_buying_price }};
+    
+    function calculateProfit() {
+        const sellingPrice = parseFloat(sellingPriceInput.value) || 0;
+        const conversionFactor = parseFloat(conversionFactorInput.value) || 1;
+        
+        if (sellingPrice > 0 && conversionFactor > 0) {
+            const costPerVariant = baseBuyingPrice * conversionFactor;
+            const profitPerUnit = sellingPrice - costPerVariant;
+            const profitMargin = ((profitPerUnit / sellingPrice) * 100);
+            
+            let html = `
+                <div class="small">
+                    <div><strong>Cost per unit:</strong> KES ${costPerVariant.toFixed(2)}</div>
+                    <div><strong>Profit per unit:</strong> 
+                        <span class="${profitPerUnit >= 0 ? 'text-success' : 'text-danger'}">
+                            KES ${profitPerUnit.toFixed(2)}
+                        </span>
+                    </div>
+                    <div><strong>Profit margin:</strong> 
+                        <span class="${profitMargin >= 0 ? 'text-success' : 'text-danger'}">
+                            ${profitMargin.toFixed(1)}%
+                        </span>
+                    </div>
+                </div>
+            `;
+            
+            if (profitPerUnit < 0) {
+                html += '<div class="text-danger small mt-2"><i class="fas fa-exclamation-triangle me-1"></i>Warning: This variant will result in a loss!</div>';
+            }
+            
+            profitCalculation.innerHTML = html;
+        } else {
+            profitCalculation.innerHTML = '<small class="text-muted">Enter selling price and conversion factor to see profit calculation</small>';
+        }
+    }
+    
+    sellingPriceInput.addEventListener('input', calculateProfit);
+    conversionFactorInput.addEventListener('input', calculateProfit);
+    
+    // Auto-calculate common conversion factors
+    const sizeSelect = document.getElementById('size_id');
+    sizeSelect.addEventListener('change', function() {
+        const selectedOption = this.options[this.selectedIndex];
+        const sizeName = selectedOption.text.toLowerCase();
+        
+        // Auto-suggest conversion factors for common sizes
+        if (sizeName.includes('tot') && sizeName.includes('30ml')) {
+            // Typical bottle (750ml) = 25 tots (30ml each)
+            conversionFactorInput.value = '0.04';
+            calculateProfit();
+        } else if (sizeName.includes('250ml')) {
+            // Quarter bottle
+            conversionFactorInput.value = '0.33';
+            calculateProfit();
+        } else if (sizeName.includes('375ml')) {
+            // Half bottle
+            conversionFactorInput.value = '0.5';
+            calculateProfit();
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+
+{% block title %}Sizes - Liquor Store Management{% endblock %}
+
+{% block page_title %}Product Sizes{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-ruler me-2"></i>Product Sizes ({{ sizes|length }})
+                </h5>
+                <a href="{{ url_for('add_size') }}" class="btn btn-success">
+                    <i class="fas fa-plus me-2"></i>Add Size
+                </a>
+            </div>
+            <div class="card-body">
+                {% if sizes %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Sort Order</th>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Variants</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Created By</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for size in sizes %}
+                            <tr class="{{ 'table-secondary' if not size.is_active }}">
+                                <td>
+                                    <span class="badge bg-secondary">{{ size.sort_order }}</span>
+                                </td>
+                                <td>
+                                    <strong>{{ size.name }}</strong>
+                                </td>
+                                <td>
+                                    {% if size.description %}
+                                        <span class="text-muted">{{ size.description }}</span>
+                                    {% else %}
+                                        <em class="text-muted">No description</em>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% set variant_count = size.product_variants|selectattr('is_active')|list|length %}
+                                    <span class="badge bg-{{ 'info' if variant_count > 0 else 'secondary' }}">
+                                        {{ variant_count }} variants
+                                    </span>
+                                    {% if variant_count > 0 %}
+                                    <br><small class="text-muted">Used in {{ variant_count }} product variant{{ 's' if variant_count != 1 else '' }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if size.is_active %}
+                                    <span class="badge bg-success">
+                                        <i class="fas fa-check me-1"></i>Active
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">
+                                        <i class="fas fa-times me-1"></i>Inactive
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <small>{{ size.created_at.strftime('%Y-%m-%d') if size.created_at else 'Unknown' }}</small>
+                                </td>
+                                <td>
+                                    <small>{{ size.creator.full_name if size.creator else 'System' }}</small>
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-primary"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#editSizeModal"
+                                                data-id="{{ size.id }}"
+                                                data-name="{{ size.name }}"
+                                                data-description="{{ size.description or '' }}"
+                                                data-sort-order="{{ size.sort_order }}"
+                                                title="Edit Size">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+
+                                        {% set has_variants = size.product_variants|selectattr('is_active')|list|length > 0 %}
+                                        {% if not has_variants %}
+                                        <form method="POST" action="#" class="d-inline"
+                                              onsubmit="return confirm('Are you sure you want to {{ 'deactivate' if size.is_active else 'activate' }} this size?')">
+                                            <button type="submit" class="btn btn-outline-{{ 'warning' if size.is_active else 'success' }}"
+                                                    title="{{ 'Deactivate' if size.is_active else 'Activate' }} Size">
+                                                <i class="fas fa-{{ 'eye-slash' if size.is_active else 'eye' }}"></i>
+                                            </button>
+                                        </form>
+                                        {% else %}
+                                        <button type="button" class="btn btn-outline-secondary" disabled
+                                                title="Cannot deactivate - size is used in active variants">
+                                            <i class="fas fa-lock"></i>
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Summary Statistics -->
+                <div class="row mt-4">
+                    <div class="col-md-2">
+                        <div class="text-center">
+                            <h5 class="text-primary">{{ sizes|selectattr('is_active')|list|length }}</h5>
+                            <small class="text-muted">Active Sizes</small>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="text-center">
+                            {% set total_variants = 0 %}
+                            {% for size in sizes %}
+                                {% if size.is_active %}
+                                    {% set total_variants = total_variants + (size.product_variants|selectattr('is_active')|list|length) %}
+                                {% endif %}
+                            {% endfor %}
+                            <h5 class="text-info">{{ total_variants }}</h5>
+                            <small class="text-muted">Total Variants</small>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="text-center">
+                            {% set sizes_in_use = 0 %}
+                            {% for size in sizes %}
+                                {% if size.is_active and size.product_variants|selectattr('is_active')|list|length > 0 %}
+                                    {% set sizes_in_use = sizes_in_use + 1 %}
+                                {% endif %}
+                            {% endfor %}
+                            <h5 class="text-success">{{ sizes_in_use }}</h5>
+                            <small class="text-muted">Sizes in Use</small>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="text-center">
+                            <h5 class="text-secondary">{{ sizes|rejectattr('is_active')|list|length }}</h5>
+                            <small class="text-muted">Inactive Sizes</small>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="text-center">
+                            {% set unused_sizes = 0 %}
+                            {% for size in sizes %}
+                                {% if size.is_active and size.product_variants|selectattr('is_active')|list|length == 0 %}
+                                    {% set unused_sizes = unused_sizes + 1 %}
+                                {% endif %}
+                            {% endfor %}
+                            <h5 class="text-warning">{{ unused_sizes }}</h5>
+                            <small class="text-muted">Unused Sizes</small>
+                        </div>
+                    </div>
+                </div>
+
+                {% else %}
+                <!-- Empty State -->
+                <div class="text-center py-5">
+                    <div class="mb-4">
+                        <i class="fas fa-ruler text-muted" style="font-size: 3rem;"></i>
+                    </div>
+                    <h5 class="text-muted mb-3">No Sizes Found</h5>
+                    <p class="text-muted mb-4">
+                        Sizes define different packaging options for your products (bottles, tots, cases, etc.).
+                        Create your first size to get started.
+                    </p>
+                    <a href="{{ url_for('add_size') }}" class="btn btn-success">
+                        <i class="fas fa-plus me-2"></i>Create First Size
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Size Modal -->
+<div class="modal fade" id="editSizeModal" tabindex="-1" aria-labelledby="editSizeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editSizeModalLabel">
+                    <i class="fas fa-edit me-2"></i>Edit Size
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="#" id="editSizeForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="edit_size_name" class="form-label">Size Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="edit_size_name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="edit_size_description" class="form-label">Description</label>
+                        <textarea class="form-control" id="edit_size_description" name="description" rows="3"
+                                  placeholder="Optional description for this size"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="edit_sort_order" class="form-label">Sort Order</label>
+                        <input type="number" class="form-control" id="edit_sort_order" name="sort_order"
+                               min="0" step="1" value="0">
+                        <div class="form-text">Lower numbers appear first in lists</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-save me-2"></i>Update Size
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle edit size modal
+    const editModal = document.getElementById('editSizeModal');
+    const editForm = document.getElementById('editSizeForm');
+
+    editModal.addEventListener('show.bs.modal', function(event) {
+        const button = event.relatedTarget;
+        const sizeId = button.getAttribute('data-id');
+        const sizeName = button.getAttribute('data-name');
+        const sizeDescription = button.getAttribute('data-description');
+        const sortOrder = button.getAttribute('data-sort-order');
+
+        // Update form action URL (you'll need to implement the edit_size route)
+        editForm.action = `/edit_size/${sizeId}`;
+
+        // Populate form fields
+        document.getElementById('edit_size_name').value = sizeName;
+        document.getElementById('edit_size_description').value = sizeDescription;
+        document.getElementById('edit_sort_order').value = sortOrder;
+    });
+});
+</script>
+{% endblock %}
