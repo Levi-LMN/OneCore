@@ -1,0 +1,800 @@
+{% extends "base.html" %}
+
+{% block title %}Search Results - LiquorPro{% endblock %}
+{% block page_title %}Search Results{% endblock %}
+{% block breadcrumb %}Home / Search / Results{% endblock %}
+
+{% block content %}
+<div class="search-results-container">
+    <!-- Search Header -->
+    <div class="search-header">
+        <div class="search-form-container">
+            <form method="GET" action="{{ url_for('search') }}" class="search-form">
+                <div class="search-input-group">
+                    <input 
+                        type="text" 
+                        name="q" 
+                        value="{{ request.args.get('q', '') }}"
+                        placeholder="Search products, sales, expenses..."
+                        class="search-main-input"
+                        autofocus
+                    >
+                    <button type="submit" class="search-submit-btn">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+                
+                <div class="search-filters">
+                    <select name="type" class="filter-select">
+                        <option value="all" {{ 'selected' if request.args.get('type', 'all') == 'all' }}>All Results</option>
+                        <option value="products" {{ 'selected' if request.args.get('type') == 'products' }}>Products</option>
+                        <option value="sales" {{ 'selected' if request.args.get('type') == 'sales' }}>Sales</option>
+                        <option value="expenses" {{ 'selected' if request.args.get('type') == 'expenses' }}>Expenses</option>
+                        <option value="customers" {{ 'selected' if request.args.get('type') == 'customers' }}>Customers</option>
+                        {% if current_user.role in ['admin', 'manager'] %}
+                        <option value="users" {{ 'selected' if request.args.get('type') == 'users' }}>Users</option>
+                        {% endif %}
+                    </select>
+                    
+                    <select name="per_page" class="filter-select">
+                        <option value="10" {{ 'selected' if request.args.get('per_page', '10') == '10' }}>10 per page</option>
+                        <option value="25" {{ 'selected' if request.args.get('per_page') == '25' }}>25 per page</option>
+                        <option value="50" {{ 'selected' if request.args.get('per_page') == '50' }}>50 per page</option>
+                    </select>
+                </div>
+            </form>
+        </div>
+
+        <!-- Results Summary -->
+        {% if search_data %}
+        <div class="results-summary">
+            <div class="results-info">
+                <h2>
+                    {% if search_data.total > 0 %}
+                        Found {{ search_data.total }} result{{ 's' if search_data.total != 1 }} for "{{ search_data.query }}"
+                    {% else %}
+                        No results found for "{{ search_data.query }}"
+                    {% endif %}
+                </h2>
+                {% if search_data.search_type != 'all' %}
+                <p class="filter-info">Filtered by: {{ search_data.search_type.replace('_', ' ').title() }}</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Search Results -->
+    {% if search_data and search_data.total > 0 %}
+    <div class="results-content">
+        <!-- Products Section -->
+        {% if search_data.results.products %}
+        <div class="results-section">
+            <div class="section-header">
+                <h3><i class="fas fa-boxes"></i> Products ({{ search_data.results.products|length }})</h3>
+            </div>
+            <div class="results-grid products-grid">
+                {% for product in search_data.results.products %}
+                <div class="result-card product-card">
+                    <div class="card-header">
+                        <h4 class="product-name">{{ product.name }}</h4>
+                        <span class="product-category">{{ product.category }}</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="stock-info">
+                            <div class="stock-level">
+                                <span class="stock-label">Current Stock:</span>
+                                <span class="stock-value {{ product.stock_status }}">
+                                    {{ product.current_stock }} {{ product.base_unit }}
+                                </span>
+                            </div>
+                            <div class="stock-status-badge {{ product.stock_status }}">
+                                {% if product.stock_status == 'in_stock' %}
+                                    <i class="fas fa-check-circle"></i> In Stock
+                                {% elif product.stock_status == 'low_stock' %}
+                                    <i class="fas fa-exclamation-triangle"></i> Low Stock
+                                {% else %}
+                                    <i class="fas fa-times-circle"></i> Out of Stock
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        {% if product.variants %}
+                        <div class="variants-section">
+                            <h5>Available Variants:</h5>
+                            <div class="variants-list">
+                                {% for variant in product.variants %}
+                                <div class="variant-item">
+                                    <span class="variant-name">{{ variant.display_name }}</span>
+                                    <div class="variant-details">
+                                        <span class="variant-price">KSh {{ "%.2f"|format(variant.price) }}</span>
+                                        <span class="variant-stock">{{ variant.available }} available</span>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="card-actions">
+                        <a href="{{ product.url }}" class="btn btn-primary btn-sm">
+                            <i class="fas fa-eye"></i> View Details
+                        </a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Sales Section -->
+        {% if search_data.results.sales %}
+        <div class="results-section">
+            <div class="section-header">
+                <h3><i class="fas fa-cash-register"></i> Sales ({{ search_data.results.sales|length }})</h3>
+            </div>
+            <div class="results-table-container">
+                <table class="results-table">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Quantity</th>
+                            <th>Amount</th>
+                            <th>Customer</th>
+                            {% if current_user.role in ['admin', 'manager'] %}
+                            <th>Attendant</th>
+                            {% endif %}
+                            <th>Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sale in search_data.results.sales %}
+                        <tr>
+                            <td>
+                                <div class="product-info">
+                                    <strong>{{ sale.product_name }}</strong>
+                                </div>
+                            </td>
+                            <td>{{ sale.quantity }}</td>
+                            <td class="amount">KSh {{ "%.2f"|format(sale.total_amount) }}</td>
+                            <td>{{ sale.customer_name or 'Walk-in Customer' }}</td>
+                            {% if current_user.role in ['admin', 'manager'] %}
+                            <td>{{ sale.attendant }}</td>
+                            {% endif %}
+                            <td>{{ sale.date }}</td>
+                            <td>
+                                <a href="{{ sale.url }}" class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-external-link-alt"></i> View
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Expenses Section -->
+        {% if search_data.results.expenses %}
+        <div class="results-section">
+            <div class="section-header">
+                <h3><i class="fas fa-receipt"></i> Expenses ({{ search_data.results.expenses|length }})</h3>
+            </div>
+            <div class="results-table-container">
+                <table class="results-table">
+                    <thead>
+                        <tr>
+                            <th>Description</th>
+                            <th>Amount</th>
+                            <th>Category</th>
+                            {% if current_user.role in ['admin', 'manager'] %}
+                            <th>Recorded By</th>
+                            {% endif %}
+                            <th>Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for expense in search_data.results.expenses %}
+                        <tr>
+                            <td>{{ expense.description }}</td>
+                            <td class="amount expense-amount">KSh {{ "%.2f"|format(expense.amount) }}</td>
+                            <td>
+                                <span class="category-badge">{{ expense.category }}</span>
+                            </td>
+                            {% if current_user.role in ['admin', 'manager'] %}
+                            <td>{{ expense.recorded_by }}</td>
+                            {% endif %}
+                            <td>{{ expense.date }}</td>
+                            <td>
+                                <a href="{{ expense.url }}" class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-external-link-alt"></i> View
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Customers Section -->
+        {% if search_data.results.customers %}
+        <div class="results-section">
+            <div class="section-header">
+                <h3><i class="fas fa-users"></i> Customers ({{ search_data.results.customers|length }})</h3>
+            </div>
+            <div class="results-grid customers-grid">
+                {% for customer in search_data.results.customers %}
+                <div class="result-card customer-card">
+                    <div class="card-header">
+                        <h4 class="customer-name">{{ customer.name }}</h4>
+                        <div class="customer-stats">
+                            <span class="stat-badge orders">{{ customer.total_orders }} orders</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="customer-metrics">
+                            <div class="metric">
+                                <span class="metric-label">Total Spent:</span>
+                                <span class="metric-value">KSh {{ "%.2f"|format(customer.total_spent) }}</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Last Order:</span>
+                                <span class="metric-value">{{ customer.last_order }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-actions">
+                        <a href="{{ customer.url }}" class="btn btn-primary btn-sm">
+                            <i class="fas fa-chart-bar"></i> View Reports
+                        </a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Users Section -->
+        {% if search_data.results.users and current_user.role in ['admin', 'manager'] %}
+        <div class="results-section">
+            <div class="section-header">
+                <h3><i class="fas fa-users-cog"></i> Users ({{ search_data.results.users|length }})</h3>
+            </div>
+            <div class="results-table-container">
+                <table class="results-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in search_data.results.users %}
+                        <tr>
+                            <td>{{ user.full_name }}</td>
+                            <td>{{ user.username }}</td>
+                            <td>{{ user.email }}</td>
+                            <td>
+                                <span class="role-badge {{ user.role }}">{{ user.role.title() }}</span>
+                            </td>
+                            <td>
+                                <span class="status-badge {{ 'active' if user.is_active else 'inactive' }}">
+                                    {{ 'Active' if user.is_active else 'Inactive' }}
+                                </span>
+                            </td>
+                            <td>
+                                <a href="{{ user.url }}" class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-external-link-alt"></i> Manage
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    {% else %}
+    <!-- No Results -->
+    <div class="no-results">
+        <div class="no-results-icon">
+            <i class="fas fa-search"></i>
+        </div>
+        {% if request.args.get('q') %}
+        <h3>No results found</h3>
+        <p>We couldn't find anything matching "{{ request.args.get('q') }}"</p>
+        <div class="search-suggestions">
+            <h4>Try:</h4>
+            <ul>
+                <li>Checking your spelling</li>
+                <li>Using different keywords</li>
+                <li>Searching for a broader term</li>
+                <li>Removing filters</li>
+            </ul>
+        </div>
+        {% else %}
+        <h3>Start your search</h3>
+        <p>Enter a search term above to find products, sales, expenses, and more.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<style>
+/* Search Results Page Styles */
+.search-results-container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.search-header {
+    background: white;
+    padding: 2rem;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: 2rem;
+}
+
+.search-form-container {
+    margin-bottom: 1.5rem;
+}
+
+.search-input-group {
+    display: flex;
+    max-width: 600px;
+    margin-bottom: 1rem;
+}
+
+.search-main-input {
+    flex: 1;
+    padding: 0.75rem 1rem;
+    border: 2px solid var(--border);
+    border-right: none;
+    border-radius: var(--radius) 0 0 var(--radius);
+    font-size: 1rem;
+    transition: border-color 0.2s;
+}
+
+.search-main-input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.search-submit-btn {
+    padding: 0.75rem 1.5rem;
+    background: var(--primary);
+    color: white;
+    border: 2px solid var(--primary);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.search-submit-btn:hover {
+    background: var(--primary-dark);
+    border-color: var(--primary-dark);
+}
+
+.search-filters {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.filter-select {
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    background: white;
+}
+
+.results-summary h2 {
+    color: #111827;
+    font-size: 1.5rem;
+    margin: 0 0 0.5rem 0;
+}
+
+.filter-info {
+    color: #6b7280;
+    font-size: 0.875rem;
+    margin: 0;
+}
+
+.results-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.results-section {
+    background: white;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+
+.section-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-light);
+}
+
+.section-header h3 {
+    margin: 0;
+    color: #111827;
+    font-size: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.section-header i {
+    color: var(--primary);
+}
+
+/* Grid Layouts */
+.results-grid {
+    padding: 1.5rem;
+    display: grid;
+    gap: 1.5rem;
+}
+
+.products-grid {
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+}
+
+.customers-grid {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.result-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    transition: box-shadow 0.2s;
+}
+
+.result-card:hover {
+    box-shadow: var(--shadow-lg);
+}
+
+.card-header {
+    margin-bottom: 1rem;
+}
+
+.card-header h4 {
+    margin: 0 0 0.5rem 0;
+    color: #111827;
+    font-size: 1.1rem;
+}
+
+.product-category, .customer-stats {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.product-category {
+    color: #6b7280;
+    font-size: 0.875rem;
+}
+
+.card-body {
+    margin-bottom: 1rem;
+}
+
+.stock-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.stock-level {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.stock-label {
+    color: #6b7280;
+    font-size: 0.875rem;
+}
+
+.stock-value {
+    font-weight: 600;
+}
+
+.stock-value.in_stock { color: #059669; }
+.stock-value.low_stock { color: #d97706; }
+.stock-value.out_of_stock { color: #dc2626; }
+
+.stock-status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.stock-status-badge.in_stock {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.stock-status-badge.low_stock {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.stock-status-badge.out_of_stock {
+    background: #fecaca;
+    color: #991b1b;
+}
+
+.variants-section h5 {
+    margin: 0 0 0.75rem 0;
+    color: #374151;
+    font-size: 0.9rem;
+}
+
+.variants-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.variant-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem;
+    background: var(--bg-light);
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+}
+
+.variant-details {
+    display: flex;
+    gap: 1rem;
+}
+
+.variant-price {
+    font-weight: 600;
+    color: var(--primary);
+}
+
+.variant-stock {
+    color: #6b7280;
+}
+
+.customer-metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.metric {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.metric-label {
+    color: #6b7280;
+    font-size: 0.875rem;
+}
+
+.metric-value {
+    font-weight: 600;
+}
+
+.stat-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.stat-badge.orders {
+    background: #ddd6fe;
+    color: #5b21b6;
+}
+
+.card-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* Table Layouts */
+.results-table-container {
+    overflow-x: auto;
+}
+
+.results-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5rem;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.results-table th,
+.results-table td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.results-table th {
+    background: var(--bg-light);
+    font-weight: 600;
+    color: #374151;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.results-table td {
+    color: #111827;
+}
+
+.amount {
+    font-weight: 600;
+}
+
+.expense-amount {
+    color: #dc2626;
+}
+
+.category-badge {
+    padding: 0.25rem 0.5rem;
+    background: var(--bg-light);
+    border-radius: var(--radius);
+    font-size: 0.75rem;
+    color: #374151;
+}
+
+.role-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius);
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+.role-badge.admin {
+    background: #fecaca;
+    color: #991b1b;
+}
+
+.role-badge.manager {
+    background: #fed7aa;
+    color: #9a3412;
+}
+
+.role-badge.attendant {
+    background: #bbf7d0;
+    color: #166534;
+}
+
+.status-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.status-badge.active {
+    background: #bbf7d0;
+    color: #166534;
+}
+
+.status-badge.inactive {
+    background: #fecaca;
+    color: #991b1b;
+}
+
+/* No Results */
+.no-results {
+    text-align: center;
+    padding: 4rem 2rem;
+    background: white;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.no-results-icon {
+    font-size: 4rem;
+    color: #d1d5db;
+    margin-bottom: 1.5rem;
+}
+
+.no-results h3 {
+    color: #111827;
+    margin-bottom: 0.5rem;
+}
+
+.no-results p {
+    color: #6b7280;
+    margin-bottom: 2rem;
+}
+
+.search-suggestions h4 {
+    color: #374151;
+    margin-bottom: 1rem;
+}
+
+.search-suggestions ul {
+    text-align: left;
+    max-width: 300px;
+    margin: 0 auto;
+    color: #6b7280;
+}
+
+.search-suggestions li {
+    margin-bottom: 0.5rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .search-header {
+        padding: 1rem;
+    }
+    
+    .search-filters {
+        flex-direction: column;
+    }
+    
+    .filter-select {
+        width: 100%;
+    }
+    
+    .products-grid,
+    .customers-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .results-table {
+        font-size: 0.875rem;
+    }
+    
+    .results-table th,
+    .results-table td {
+        padding: 0.5rem;
+    }
+    
+    .stock-info {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    
+    .variant-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+    }
+    
+    .metric {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+    }
+}
+</style>
+{% endblock %}

@@ -907,6 +907,249 @@
                 initSidebar();
             }
         })();
+
+        // Enhanced search functionality
+(function() {
+    'use strict';
+
+    const searchInput = document.querySelector('.search-input');
+    const searchContainer = document.querySelector('.search-container');
+
+    if (!searchInput || !searchContainer) return;
+
+    let searchTimeout;
+    let currentQuery = '';
+    let isSearching = false;
+
+    // Create search results dropdown
+    const searchDropdown = document.createElement('div');
+    searchDropdown.className = 'search-dropdown';
+    searchDropdown.style.cssText = `
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-lg);
+        max-height: 400px;
+        overflow-y: auto;
+        z-index: 1000;
+        display: none;
+        margin-top: 2px;
+    `;
+    searchContainer.appendChild(searchDropdown);
+
+    // Search input event handler
+    searchInput.addEventListener('input', function(e) {
+        const query = e.target.value.trim();
+
+        if (query.length < 2) {
+            hideSearchDropdown();
+            return;
+        }
+
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            if (query !== currentQuery) {
+                currentQuery = query;
+                performSearch(query);
+            }
+        }, 300);
+    });
+
+    // Handle search form submission
+    searchInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (currentQuery.trim()) {
+                window.location.href = `/search?q=${encodeURIComponent(currentQuery.trim())}`;
+            }
+        } else if (e.key === 'Escape') {
+            hideSearchDropdown();
+            searchInput.blur();
+        }
+    });
+
+    // Hide dropdown when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!searchContainer.contains(e.target)) {
+            hideSearchDropdown();
+        }
+    });
+
+    function performSearch(query) {
+        if (isSearching) return;
+
+        isSearching = true;
+        showSearchLoading();
+
+        fetch(`/search/suggestions?q=${encodeURIComponent(query)}&limit=8`)
+            .then(response => response.json())
+            .then(data => {
+                displaySearchResults(data.suggestions || [], query);
+            })
+            .catch(error => {
+                console.error('Search error:', error);
+                showSearchError();
+            })
+            .finally(() => {
+                isSearching = false;
+            });
+    }
+
+    function displaySearchResults(suggestions, query) {
+        searchDropdown.innerHTML = '';
+
+        if (suggestions.length === 0) {
+            showNoResults(query);
+            return;
+        }
+
+        // Group suggestions by type
+        const grouped = suggestions.reduce((acc, item) => {
+            if (!acc[item.type]) acc[item.type] = [];
+            acc[item.type].push(item);
+            return acc;
+        }, {});
+
+        Object.keys(grouped).forEach(type => {
+            if (grouped[type].length > 0) {
+                // Add type header
+                const typeHeader = document.createElement('div');
+                typeHeader.className = 'search-type-header';
+                typeHeader.style.cssText = `
+                    padding: 8px 12px;
+                    background: #f8f9fa;
+                    font-size: 0.75rem;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    color: #6b7280;
+                    border-bottom: 1px solid var(--border);
+                `;
+                typeHeader.textContent = type.replace('_', ' ') + 's';
+                searchDropdown.appendChild(typeHeader);
+
+                // Add items
+                grouped[type].forEach(item => {
+                    const resultItem = createSearchResultItem(item, query);
+                    searchDropdown.appendChild(resultItem);
+                });
+            }
+        });
+
+        // Add "View all results" option
+        const viewAllItem = document.createElement('div');
+        viewAllItem.className = 'search-result-item view-all';
+        viewAllItem.style.cssText = `
+            padding: 12px;
+            border-top: 1px solid var(--border);
+            background: #f8f9fa;
+            cursor: pointer;
+            font-weight: 500;
+            text-align: center;
+            color: var(--primary);
+        `;
+        viewAllItem.innerHTML = `
+            <i class="fas fa-search"></i>
+            View all results for "${query}"
+        `;
+        viewAllItem.addEventListener('click', () => {
+            window.location.href = `/search?q=${encodeURIComponent(query)}`;
+        });
+        searchDropdown.appendChild(viewAllItem);
+
+        showSearchDropdown();
+    }
+
+    function createSearchResultItem(item, query) {
+        const resultItem = document.createElement('div');
+        resultItem.className = 'search-result-item';
+        resultItem.style.cssText = `
+            padding: 10px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #f0f0f0;
+            transition: background-color 0.2s;
+        `;
+
+        // Highlight matching text
+        const highlightedText = highlightQuery(item.text, query);
+
+        resultItem.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <i class="${item.icon}" style="color: #6b7280; width: 16px;"></i>
+                <div style="flex: 1;">
+                    <div style="font-weight: 500;">${highlightedText}</div>
+                    ${item.category ? `<div style="font-size: 0.75rem; color: #6b7280;">${item.category}</div>` : ''}
+                </div>
+                <i class="fas fa-arrow-right" style="color: #d1d5db; font-size: 0.75rem;"></i>
+            </div>
+        `;
+
+        resultItem.addEventListener('mouseenter', () => {
+            resultItem.style.backgroundColor = '#f8f9fa';
+        });
+
+        resultItem.addEventListener('mouseleave', () => {
+            resultItem.style.backgroundColor = '';
+        });
+
+        resultItem.addEventListener('click', () => {
+            if (item.type === 'product' || item.type === 'category') {
+                window.location.href = '/products';
+            } else {
+                window.location.href = `/search?q=${encodeURIComponent(item.text)}&type=${item.type}`;
+            }
+        });
+
+        return resultItem;
+    }
+
+    function highlightQuery(text, query) {
+        const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')})`, 'gi');
+        return text.replace(regex, '<mark style="background: #fef3c7; padding: 0 2px;">$1</mark>');
+    }
+
+    function showSearchLoading() {
+        searchDropdown.innerHTML = `
+            <div style="padding: 20px; text-align: center; color: #6b7280;">
+                <i class="fas fa-spinner fa-spin"></i>
+                <div style="margin-top: 8px; font-size: 0.875rem;">Searching...</div>
+            </div>
+        `;
+        showSearchDropdown();
+    }
+
+    function showSearchError() {
+        searchDropdown.innerHTML = `
+            <div style="padding: 20px; text-align: center; color: #dc2626;">
+                <i class="fas fa-exclamation-triangle"></i>
+                <div style="margin-top: 8px; font-size: 0.875rem;">Search failed. Please try again.</div>
+            </div>
+        `;
+        showSearchDropdown();
+    }
+
+    function showNoResults(query) {
+        searchDropdown.innerHTML = `
+            <div style="padding: 20px; text-align: center; color: #6b7280;">
+                <i class="fas fa-search"></i>
+                <div style="margin-top: 8px; font-size: 0.875rem;">No results found for "${query}"</div>
+                <div style="margin-top: 4px; font-size: 0.75rem;">Try a different search term</div>
+            </div>
+        `;
+        showSearchDropdown();
+    }
+
+    function showSearchDropdown() {
+        searchDropdown.style.display = 'block';
+    }
+
+    function hideSearchDropdown() {
+        searchDropdown.style.display = 'none';
+    }
+})();
     </script>
 
     <!-- Block for additional scripts -->

@@ -220,106 +220,150 @@
 
 <!-- Add Sale Modal -->
 <div class="modal fade" id="addSaleModal" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Record New Sale</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST" action="{{ url_for('add_sale') }}">
-                <div class="modal-body">
+                <div class="modal-body px-4" style="max-height: 70vh; overflow-y: auto;">
                     <!-- Product Selection -->
-                    <div class="row g-3 mb-4">
-                        <div class="col-12">
-                            <label for="variant_id" class="form-label">Product Variant</label>
-                            <select class="form-select" id="variant_id" name="variant_id" required>
-                                <option value="">Select product variant</option>
-                                {% for variant, product, category, size in variants %}
-                                <option value="{{ variant.id }}" data-price="{{ variant.selling_price }}" data-available="{{ variant.get_available_stock_in_variant_units() }}">
-                                    {{ product.name }} - {{ size.name }} ({{ format_currency(variant.selling_price) }})
-                                    - Available: {{ variant.get_available_stock_in_variant_units() }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-6 col-sm-4">
-                            <label for="quantity" class="form-label">Quantity</label>
-                            <input type="number" class="form-control" id="quantity" name="quantity" min="1" step="0.5" required>
-                        </div>
-                        <div class="col-6 col-sm-4">
-                            <label for="unit_price" class="form-label">Unit Price</label>
-                            <input type="number" class="form-control" id="unit_price" name="unit_price" step="0.01" required readonly>
-                        </div>
-                        <div class="col-12 col-sm-4">
-                            <label for="sale_date" class="form-label">Sale Date</label>
-                            <input type="date" class="form-control" id="sale_date" name="sale_date" value="{{ today.strftime('%Y-%m-%d') }}" required>
+                    <div class="mb-4">
+                        <h6><i class="fas fa-box me-2"></i>Product Information</h6>
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label for="variant_id" class="form-label">Product Variant</label>
+                                <select class="form-select" id="variant_id" name="variant_id" required>
+                                    <option value="">Select product variant</option>
+                                    {% for variant, product, category, size in variants %}
+                                    <option value="{{ variant.id }}" data-price="{{ variant.selling_price }}" data-available="{{ variant.get_available_stock_in_variant_units() }}">
+                                        {{ product.name }} - {{ size.name }} ({{ format_currency(variant.selling_price) }})
+                                        - Available: {{ variant.get_available_stock_in_variant_units() }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="quantity" class="form-label">Quantity</label>
+                                <input type="number" class="form-control" id="quantity" name="quantity" min="1" step="0.5" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="unit_price" class="form-label">Unit Price</label>
+                                <input type="number" class="form-control" id="unit_price" name="unit_price" step="0.01" required readonly>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="sale_date" class="form-label">Sale Date</label>
+                                <input type="date" class="form-control" id="sale_date" name="sale_date" value="{{ today.strftime('%Y-%m-%d') }}" required>
+                            </div>
                         </div>
                     </div>
 
                     <!-- Discount Section -->
-                    <div class="row g-3 mb-4">
-                        <div class="col-12">
-                            <h6 class="mb-3"><i class="fas fa-percent me-2"></i>Discount Information</h6>
+                    <div class="mb-4">
+                        <div class="d-flex align-items-center mb-3 ps-2">
+                            <div class="form-check form-switch me-3">
+                                <input class="form-check-input fs-5" type="checkbox" id="applyDiscount" style="transform: scale(1.2);">
+                                <label class="form-check-label fw-semibold fs-6 ms-2" for="applyDiscount">
+                                    <i class="fas fa-percent me-2 text-primary"></i>Apply Discount
+                                </label>
+                            </div>
                         </div>
-                        <div class="col-12 col-sm-4">
-                            <label for="discount_type" class="form-label">Discount Type</label>
-                            <select class="form-select" id="discount_type" name="discount_type">
-                                <option value="none">No Discount</option>
-                                <option value="percentage">Percentage Discount</option>
-                                <option value="fixed">Fixed Amount Discount</option>
-                            </select>
-                        </div>
-                        <div class="col-6 col-sm-4">
-                            <label for="discount_value" class="form-label">Discount Value</label>
-                            <input type="number" class="form-control" id="discount_value" name="discount_value" step="0.01" min="0">
-                        </div>
-                        <div class="col-6 col-sm-4">
-                            <label for="discount_reason" class="form-label">Discount Reason</label>
-                            <input type="text" class="form-control" id="discount_reason" name="discount_reason" placeholder="Optional">
+                        <div id="discountSection" class="d-none">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <label for="discount_type" class="form-label">Type</label>
+                                    <select class="form-select" id="discount_type" name="discount_type">
+                                        <option value="percentage">Percentage (%)</option>
+                                        <option value="fixed">Fixed Amount</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="discount_value" class="form-label">Value</label>
+                                    <input type="number" class="form-control" id="discount_value" name="discount_value" step="0.01" min="0">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="discount_reason" class="form-label">Reason</label>
+                                    <input type="text" class="form-control" id="discount_reason" name="discount_reason" placeholder="Optional">
+                                </div>
+                            </div>
                         </div>
                     </div>
 
                     <!-- Payment Section -->
-                    <div class="row g-3 mb-4">
-                        <div class="col-12">
-                            <h6 class="mb-3"><i class="fas fa-credit-card me-2"></i>Payment Information</h6>
+                    <div class="mb-4">
+                        <h6><i class="fas fa-credit-card me-2"></i>Payment Methods</h6>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-4">
+                                <div class="form-check form-switch ms-3">
+                                    <input class="form-check-input fs-5" type="checkbox" id="useCash" style="transform: scale(1.2);">
+                                    <label class="form-check-label fw-bold text-primary fs-6 ms-2" for="useCash">
+                                        <i class="fas fa-money-bill me-2"></i>Cash
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check form-switch ms-3">
+                                    <input class="form-check-input fs-5" type="checkbox" id="useMpesa" style="transform: scale(1.2);">
+                                    <label class="form-check-label fw-bold text-success fs-6 ms-2" for="useMpesa">
+                                        <i class="fas fa-mobile-alt me-2"></i>M-Pesa
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check form-switch ms-3">
+                                    <input class="form-check-input fs-5" type="checkbox" id="useCredit" style="transform: scale(1.2);">
+                                    <label class="form-check-label fw-bold text-warning fs-6 ms-2" for="useCredit">
+                                        <i class="fas fa-credit-card me-2"></i>Credit
+                                    </label>
+                                </div>
+                            </div>
                         </div>
-                        <div class="col-12 col-sm-4">
-                            <label for="cash_amount" class="form-label">Cash Amount</label>
-                            <input type="number" class="form-control" id="cash_amount" name="cash_amount" step="0.01" min="0" value="0">
-                        </div>
-                        <div class="col-12 col-sm-4">
-                            <label for="mpesa_amount" class="form-label">M-Pesa Amount</label>
-                            <input type="number" class="form-control" id="mpesa_amount" name="mpesa_amount" step="0.01" min="0" value="0">
-                        </div>
-                        <div class="col-12 col-sm-4">
-                            <label for="credit_amount" class="form-label">Credit Amount</label>
-                            <input type="number" class="form-control" id="credit_amount" name="credit_amount" step="0.01" min="0" value="0">
+                        <div class="row g-3">
+                            <div class="col-md-4 d-none" id="cashField">
+                                <label for="cash_amount" class="form-label">Cash Amount</label>
+                                <input type="number" class="form-control" id="cash_amount" name="cash_amount" step="0.01" min="0" value="0">
+                            </div>
+                            <div class="col-md-4 d-none" id="mpesaField">
+                                <label for="mpesa_amount" class="form-label">M-Pesa Amount</label>
+                                <input type="number" class="form-control" id="mpesa_amount" name="mpesa_amount" step="0.01" min="0" value="0">
+                            </div>
+                            <div class="col-md-4 d-none" id="creditField">
+                                <label for="credit_amount" class="form-label">Credit Amount</label>
+                                <input type="number" class="form-control" id="credit_amount" name="credit_amount" step="0.01" min="0" value="0">
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Additional Information -->
-                    <div class="row g-3 mb-3">
-                        <div class="col-12 col-sm-6">
-                            <label for="customer_name" class="form-label">Customer Name</label>
-                            <input type="text" class="form-control" id="customer_name" name="customer_name" placeholder="Required for credit sales">
+                    <!-- Customer Information -->
+                    <div id="customerSection" class="mb-4 d-none">
+                        <h6><i class="fas fa-user me-2"></i>Customer Information</h6>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="customer_name" class="form-label">Customer Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="customer_name" name="customer_name" placeholder="Required for credit sales">
+                            </div>
                         </div>
                     </div>
 
+                    <!-- Notes -->
                     <div class="mb-3">
                         <label for="notes" class="form-label">Notes</label>
                         <textarea class="form-control" id="notes" name="notes" rows="2" placeholder="Optional notes"></textarea>
                     </div>
 
                     <!-- Sale Calculation Summary -->
-                    <div class="alert alert-info" id="saleCalculation" style="display: none;">
+                    <div class="alert alert-info d-none" id="saleCalculation">
                         <h6 class="alert-heading mb-2"><i class="fas fa-calculator me-2"></i>Sale Summary</h6>
                         <div id="calculationDetails"></div>
+                        <div id="paymentMismatch" class="text-danger mt-2 d-none">
+                            <small><i class="fas fa-exclamation-triangle me-1"></i>Payment total doesn't match sale total!</small>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Record Sale</button>
+                    <button type="submit" class="btn btn-primary" id="submitSale">Record Sale</button>
                 </div>
             </form>
         </div>
@@ -329,85 +373,185 @@
 
 {% block scripts %}
 <script>
-// Sales modal calculation
 document.addEventListener('DOMContentLoaded', function() {
+    // Form elements
     const variantSelect = document.getElementById('variant_id');
     const quantityInput = document.getElementById('quantity');
     const unitPriceInput = document.getElementById('unit_price');
+
+    // Discount elements
+    const applyDiscountCheck = document.getElementById('applyDiscount');
+    const discountSection = document.getElementById('discountSection');
     const discountTypeSelect = document.getElementById('discount_type');
     const discountValueInput = document.getElementById('discount_value');
+
+    // Payment elements
+    const useCashCheck = document.getElementById('useCash');
+    const useMpesaCheck = document.getElementById('useMpesa');
+    const useCreditCheck = document.getElementById('useCredit');
+    const cashField = document.getElementById('cashField');
+    const mpesaField = document.getElementById('mpesaField');
+    const creditField = document.getElementById('creditField');
     const cashInput = document.getElementById('cash_amount');
     const mpesaInput = document.getElementById('mpesa_amount');
     const creditInput = document.getElementById('credit_amount');
+
+    // Customer section
+    const customerSection = document.getElementById('customerSection');
+    const customerNameInput = document.getElementById('customer_name');
+
+    // Calculation elements
     const calculationDiv = document.getElementById('saleCalculation');
     const calculationDetails = document.getElementById('calculationDetails');
+    const paymentMismatch = document.getElementById('paymentMismatch');
 
     // Update unit price when variant changes
-    if (variantSelect) {
-        variantSelect.addEventListener('change', function() {
-            const selectedOption = this.options[this.selectedIndex];
-            if (selectedOption.value) {
-                unitPriceInput.value = selectedOption.dataset.price;
-                calculateSale();
-            }
-        });
-    }
+    variantSelect?.addEventListener('change', function() {
+        const selectedOption = this.options[this.selectedIndex];
+        if (selectedOption.value) {
+            unitPriceInput.value = selectedOption.dataset.price;
+            calculateSale();
+        }
+    });
+
+    // Toggle discount section
+    applyDiscountCheck?.addEventListener('change', function() {
+        discountSection.classList.toggle('d-none', !this.checked);
+        if (!this.checked) {
+            discountValueInput.value = '';
+        }
+        calculateSale();
+    });
+
+    // Payment method toggles
+    useCashCheck?.addEventListener('change', function() {
+        cashField.classList.toggle('d-none', !this.checked);
+        if (!this.checked) cashInput.value = '0';
+        calculatePayment();
+    });
+
+    useMpesaCheck?.addEventListener('change', function() {
+        mpesaField.classList.toggle('d-none', !this.checked);
+        if (!this.checked) mpesaInput.value = '0';
+        calculatePayment();
+    });
+
+    useCreditCheck?.addEventListener('change', function() {
+        creditField.classList.toggle('d-none', !this.checked);
+        customerSection.classList.toggle('d-none', !this.checked);
+        if (!this.checked) {
+            creditInput.value = '0';
+            customerNameInput.removeAttribute('required');
+        } else {
+            customerNameInput.setAttribute('required', '');
+        }
+        calculatePayment();
+    });
 
     // Calculate sale totals
     function calculateSale() {
         const quantity = parseFloat(quantityInput.value) || 0;
         const unitPrice = parseFloat(unitPriceInput.value) || 0;
-        const discountType = discountTypeSelect.value;
-        const discountValue = parseFloat(discountValueInput.value) || 0;
 
         if (quantity > 0 && unitPrice > 0) {
             const originalAmount = quantity * unitPrice;
             let discountAmount = 0;
 
-            if (discountType === 'percentage') {
-                discountAmount = (originalAmount * discountValue) / 100;
-            } else if (discountType === 'fixed') {
-                discountAmount = Math.min(discountValue, originalAmount);
+            if (applyDiscountCheck.checked) {
+                const discountType = discountTypeSelect.value;
+                const discountValue = parseFloat(discountValueInput.value) || 0;
+
+                if (discountType === 'percentage') {
+                    discountAmount = (originalAmount * discountValue) / 100;
+                } else if (discountType === 'fixed') {
+                    discountAmount = Math.min(discountValue, originalAmount);
+                }
             }
 
             const totalAmount = originalAmount - discountAmount;
+            window.saleTotal = totalAmount; // Store for payment validation
 
             calculationDetails.innerHTML = `
                 <div class="row g-2 small">
-                    <div class="col-6 col-sm-4">
-                        <span class="text-muted">Original Amount:</span><br>
+                    <div class="col-4">
+                        <span class="text-muted">Original:</span><br>
                         <span class="fw-bold">${originalAmount.toFixed(2)}</span>
                     </div>
-                    <div class="col-6 col-sm-4">
+                    <div class="col-4">
                         <span class="text-muted">Discount:</span><br>
                         <span class="text-warning">-${discountAmount.toFixed(2)}</span>
                     </div>
-                    <div class="col-12 col-sm-4">
-                        <span class="text-muted">Total Amount:</span><br>
+                    <div class="col-4">
+                        <span class="text-muted">Total:</span><br>
                         <span class="fw-bold fs-6 text-primary">${totalAmount.toFixed(2)}</span>
                     </div>
                 </div>
             `;
-            calculationDiv.style.display = 'block';
+            calculationDiv.classList.remove('d-none');
 
-            // Auto-fill cash amount if no payment specified
-            const totalPayment = parseFloat(cashInput.value || 0) + parseFloat(mpesaInput.value || 0) + parseFloat(creditInput.value || 0);
-            if (totalPayment === 0) {
+            // Auto-select and fill cash if no payment method selected
+            if (!useCashCheck.checked && !useMpesaCheck.checked && !useCreditCheck.checked) {
+                useCashCheck.checked = true;
+                useCashCheck.dispatchEvent(new Event('change'));
                 cashInput.value = totalAmount.toFixed(2);
             }
+
+            validatePayment();
         } else {
-            calculationDiv.style.display = 'none';
+            calculationDiv.classList.add('d-none');
         }
     }
 
-    // Attach event listeners
+    function calculatePayment() {
+        // Auto-fill remaining amount
+        const totalAmount = window.saleTotal || 0;
+        if (totalAmount > 0) {
+            const currentPayments = [];
+
+            if (useCashCheck.checked && cashInput.value) currentPayments.push(parseFloat(cashInput.value));
+            if (useMpesaCheck.checked && mpesaInput.value) currentPayments.push(parseFloat(mpesaInput.value));
+            if (useCreditCheck.checked && creditInput.value) currentPayments.push(parseFloat(creditInput.value));
+
+            const totalPaid = currentPayments.reduce((sum, amount) => sum + amount, 0);
+            const remaining = totalAmount - totalPaid;
+
+            // Auto-fill first empty payment method
+            if (remaining > 0) {
+                if (useCashCheck.checked && !cashInput.value) {
+                    cashInput.value = remaining.toFixed(2);
+                } else if (useMpesaCheck.checked && !mpesaInput.value) {
+                    mpesaInput.value = remaining.toFixed(2);
+                } else if (useCreditCheck.checked && !creditInput.value) {
+                    creditInput.value = remaining.toFixed(2);
+                }
+            }
+        }
+        validatePayment();
+    }
+
+    function validatePayment() {
+        const totalAmount = window.saleTotal || 0;
+        const totalPayment = (parseFloat(cashInput.value) || 0) +
+                            (parseFloat(mpesaInput.value) || 0) +
+                            (parseFloat(creditInput.value) || 0);
+
+        const mismatch = Math.abs(totalAmount - totalPayment) > 0.01;
+        paymentMismatch.classList.toggle('d-none', !mismatch);
+
+        const submitBtn = document.getElementById('submitSale');
+        submitBtn.disabled = mismatch || totalAmount <= 0;
+    }
+
+    // Event listeners for calculation
     [quantityInput, unitPriceInput, discountValueInput].forEach(input => {
-        if (input) input.addEventListener('input', calculateSale);
+        input?.addEventListener('input', calculateSale);
     });
 
-    if (discountTypeSelect) {
-        discountTypeSelect.addEventListener('change', calculateSale);
-    }
+    [cashInput, mpesaInput, creditInput].forEach(input => {
+        input?.addEventListener('input', validatePayment);
+    });
+
+    discountTypeSelect?.addEventListener('change', calculateSale);
 });
 </script>
 {% endblock %}

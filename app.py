@@ -2497,6 +2497,357 @@ def create_app(config=None):
     return app
 
 
+# Fixed search route that works with your database models
+@app.route('/search')
+@login_required
+def search():
+    """Simple search route that works with your models"""
+    query = request.args.get('q', '').strip()
+    search_type = request.args.get('type', 'all')
+
+    print(f"Search Debug: Query='{query}', Type='{search_type}'")
+
+    # If no query, show empty search page
+    if not query:
+        return render_template('search_results.html', search_data=None)
+
+    try:
+        # Get current user
+        current_user = session.get('user_id')  # Adjust this to how you get current user
+        if current_user:
+            current_user = User.query.get(current_user)
+
+        if not current_user:
+            flash('Please log in to search', 'error')
+            return redirect(url_for('login'))
+
+        print(f"Search Debug: Current user = {current_user.username}")
+
+        results = {'products': [], 'sales': [], 'expenses': [], 'customers': [], 'users': []}
+        total_results = 0
+
+        # Test database connection with correct SQLAlchemy syntax
+        try:
+            db.session.execute(db.text('SELECT 1')).fetchone()
+            print("Search Debug: Database connection OK")
+        except Exception as e:
+            print(f"Search Debug: Database connection error: {e}")
+            flash(f'Database connection error: {str(e)}', 'error')
+            return render_template('search_results.html', search_data=None)
+
+        # Search Products
+        if search_type in ['all', 'products']:
+            try:
+                print("Search Debug: Searching products...")
+
+                # Simple product search using your models
+                products = db.session.query(Product, Category).join(Category).filter(
+                    Product.name.ilike(f'%{query}%')
+                ).limit(10).all()
+
+                print(f"Search Debug: Found {len(products)} matching products")
+
+                for product, category in products:
+                    try:
+                        # Get variants for this product
+                        variants = ProductVariant.query.filter_by(
+                            product_id=product.id,
+                            is_active=True
+                        ).join(Size).all()
+
+                        variant_list = []
+                        for variant in variants:
+                            variant_list.append({
+                                'id': variant.id,
+                                'display_name': variant.get_display_name(),
+                                'price': variant.selling_price,
+                                'available': variant.get_available_stock_in_variant_units()
+                            })
+
+                        results['products'].append({
+                            'id': product.id,
+                            'name': product.name,
+                            'category': category.name,
+                            'current_stock': product.get_available_stock(),
+                            'stock_status': product.get_stock_status(),
+                            'base_unit': product.base_unit,
+                            'url': url_for('products'),
+                            'variants': variant_list
+                        })
+                        total_results += 1
+
+                    except Exception as e:
+                        print(f"Search Debug: Error processing product {product.id}: {e}")
+                        continue
+
+                print(f"Search Debug: Successfully processed {len(results['products'])} products")
+
+            except Exception as e:
+                print(f"Search Debug: Product search error: {e}")
+
+        # Search Sales (only if user has permission)
+        if search_type in ['all', 'sales']:
+            try:
+                print("Search Debug: Searching sales...")
+
+                sales_query = db.session.query(Sale, ProductVariant, Product).join(
+                    ProductVariant
+                ).join(Product).filter(
+                    db.or_(
+                        Product.name.ilike(f'%{query}%'),
+                        Sale.customer_name.ilike(f'%{query}%')
+                    )
+                ).order_by(Sale.timestamp.desc())
+
+                # Filter for attendants (only their sales)
+                if current_user.role not in ['admin', 'manager']:
+                    sales_query = sales_query.filter(Sale.attendant_id == current_user.id)
+
+                sales = sales_query.limit(10).all()
+
+                for sale, variant, product in sales:
+                    results['sales'].append({
+                        'id': sale.id,
+                        'product_name': variant.get_display_name(),
+                        'quantity': sale.quantity,
+                        'total_amount': sale.total_amount,
+                        'customer_name': sale.customer_name or 'Walk-in Customer',
+                        'attendant': current_user.full_name if current_user.role not in ['admin',
+                                                                                         'manager'] else sale.attendant.full_name,
+                        'date': sale.sale_date.strftime('%Y-%m-%d'),
+                        'url': url_for('sales', date=sale.sale_date.strftime('%Y-%m-%d'))
+                    })
+                    total_results += 1
+
+                print(f"Search Debug: Found {len(results['sales'])} sales")
+
+            except Exception as e:
+                print(f"Search Debug: Sales search error: {e}")
+
+        # Search Expenses
+        if search_type in ['all', 'expenses']:
+            try:
+                print("Search Debug: Searching expenses...")
+
+                expenses_query = db.session.query(Expense, User, ExpenseCategory).join(
+                    User, Expense.recorded_by == User.id
+                ).join(ExpenseCategory).filter(
+                    db.or_(
+                        Expense.description.ilike(f'%{query}%'),
+                        ExpenseCategory.name.ilike(f'%{query}%')
+                    )
+                ).order_by(Expense.timestamp.desc())
+
+                # Filter for attendants
+                if current_user.role not in ['admin', 'manager']:
+                    expenses_query = expenses_query.filter(Expense.recorded_by == current_user.id)
+
+                expenses = expenses_query.limit(10).all()
+
+                for expense, user, category in expenses:
+                    results['expenses'].append({
+                        'id': expense.id,
+                        'description': expense.description,
+                        'amount': expense.amount,
+                        'category': category.name,
+                        'recorded_by': user.full_name,
+                        'date': expense.expense_date.strftime('%Y-%m-%d'),
+                        'url': url_for('expenses', date=expense.expense_date.strftime('%Y-%m-%d'))
+                    })
+                    total_results += 1
+
+                print(f"Search Debug: Found {len(results['expenses'])} expenses")
+
+            except Exception as e:
+                print(f"Search Debug: Expenses search error: {e}")
+
+        print(f"Search Debug: Total results = {total_results}")
+
+        # Create audit log (with error handling)
+        try:
+            audit_log = AuditLog(
+                user_id=current_user.id,
+                action='SEARCH',
+                table_name='system',
+                changes_summary=f"Search performed: '{query}' (type: {search_type}, results: {total_results})"
+            )
+            db.session.add(audit_log)
+            db.session.commit()
+            print("Search Debug: Audit log created successfully")
+        except Exception as e:
+            print(f"Search Debug: Audit log error: {e}")
+            # Don't fail the search if audit logging fails
+            db.session.rollback()
+
+        # Prepare search data for template
+        search_data = {
+            'results': results,
+            'total': total_results,
+            'query': query,
+            'search_type': search_type,
+            'message': f'Found {total_results} results for "{query}"' if total_results > 0 else f'No results found for "{query}"'
+        }
+
+        print("Search Debug: Rendering template...")
+        return render_template('search_results.html', search_data=search_data)
+
+    except Exception as e:
+        error_msg = str(e)
+        print(f"Search Debug: Main exception: {error_msg}")
+
+        import traceback
+        print("Search Debug: Full traceback:")
+        print(traceback.format_exc())
+
+        flash(f'Search error: {error_msg}', 'error')
+        return render_template('search_results.html', search_data=None)
+
+
+# Simple search suggestions route
+@app.route('/search/suggestions')
+@login_required
+def search_suggestions():
+    """Simple search suggestions"""
+    query = request.args.get('q', '').strip()
+    limit = min(request.args.get('limit', 5, type=int), 10)
+
+    if len(query) < 2:
+        return jsonify({'suggestions': []})
+
+    suggestions = []
+
+    try:
+        # Product suggestions
+        products = Product.query.join(Category).filter(
+            Product.name.ilike(f'%{query}%')
+        ).limit(limit).all()
+
+        for product in products:
+            suggestions.append({
+                'text': product.name,
+                'type': 'product',
+                'category': product.category.name,
+                'icon': 'fas fa-box'
+            })
+
+        # Category suggestions if we need more
+        if len(suggestions) < limit:
+            categories = Category.query.filter(
+                Category.name.ilike(f'%{query}%'),
+                Category.is_active == True
+            ).limit(limit - len(suggestions)).all()
+
+            for category in categories:
+                suggestions.append({
+                    'text': category.name,
+                    'type': 'category',
+                    'icon': 'fas fa-layer-group'
+                })
+
+        return jsonify({'suggestions': suggestions})
+
+    except Exception as e:
+        print(f"Search suggestions error: {str(e)}")
+        return jsonify({'suggestions': []})
+
+
+# Test route to verify template works
+@app.route('/search/test')
+@login_required
+def search_test():
+    """Test search template"""
+    search_data = {
+        'results': {
+            'products': [{
+                'id': 1,
+                'name': 'Test Product',
+                'category': 'Test Category',
+                'current_stock': 10,
+                'stock_status': 'good_stock',
+                'base_unit': 'bottles',
+                'url': '/products',
+                'variants': [{
+                    'id': 1,
+                    'display_name': 'Test Product - 750ml',
+                    'price': 100.00,
+                    'available': 10
+                }]
+            }],
+            'sales': [],
+            'expenses': [],
+            'customers': [],
+            'users': []
+        },
+        'total': 1,
+        'query': 'test',
+        'search_type': 'all',
+        'message': 'Test search results'
+    }
+
+    return render_template('search_results.html', search_data=search_data)
+
+
+
+@app.route('/quick_search')
+@login_required
+def quick_search():
+    """Quick search for point of sale - returns products/variants only"""
+    query = request.args.get('q', '').strip()
+
+    if len(query) < 2:
+        return jsonify({'results': []})
+
+    try:
+        # Simple product search for POS
+        products = Product.query.filter(
+            Product.name.ilike(f'%{query}%'),
+            Product.current_stock > 0
+        ).limit(20).all()
+
+        formatted_results = []
+        for product in products:
+            # Get variants if they exist
+            try:
+                variants = ProductVariant.query.filter(
+                    ProductVariant.product_id == product.id,
+                    ProductVariant.is_active == True
+                ).all()
+
+                if variants:
+                    for variant in variants:
+                        if variant.get_available_stock_in_variant_units() > 0:
+                            formatted_results.append({
+                                'variant_id': variant.id,
+                                'product_name': product.name,
+                                'variant_display': variant.get_display_name(),
+                                'price': variant.selling_price,
+                                'available_qty': variant.get_available_stock_in_variant_units(),
+                            })
+                else:
+                    # Product without variants
+                    formatted_results.append({
+                        'variant_id': None,
+                        'product_name': product.name,
+                        'variant_display': product.name,
+                        'price': getattr(product, 'selling_price', 0),
+                        'available_qty': product.current_stock,
+                    })
+            except:
+                # Fallback if variant methods don't exist
+                formatted_results.append({
+                    'variant_id': None,
+                    'product_name': product.name,
+                    'variant_display': product.name,
+                    'price': getattr(product, 'selling_price', 0),
+                    'available_qty': product.current_stock,
+                })
+
+        return jsonify({'results': formatted_results})
+
+    except Exception as e:
+        app.logger.error(f"Quick search error: {str(e)}")
+        return jsonify({'results': [], 'error': 'Search failed'})
+
 if __name__ == '__main__':
     initialize_database()
     app.run(debug=True, host='0.0.0.0', port=5000)
