@@ -1,32 +1,83 @@
 {% extends "base.html" %}
-{% block title %}Profile - {{ user.full_name }}{% endblock %}
-{% block page_title %}User Profile{% endblock %}
+
+{% block title %}My Profile - LiquorPro{% endblock %}
+{% block page_title %}My Profile{% endblock %}
+{% block breadcrumb %}Settings / Profile{% endblock %}
 
 {% block content %}
 <div class="row">
-    <div class="col-md-4">
-        <div class="card">
+    <div class="col-lg-4 mb-4">
+        <div class="card shadow-sm">
             <div class="card-body text-center">
-                <i class="fas fa-user-circle fa-5x text-muted mb-3"></i>
-                <h4>{{ user.full_name }}</h4>
-                <p class="text-muted">{{ user.role.title() }}</p>
-                <p><strong>Email:</strong> {{ user.email }}</p>
-                <p><strong>Username:</strong> {{ user.username }}</p>
-                <p><strong>Member Since:</strong> {{ user.created_at.strftime('%B %Y') }}</p>
-                {% if user.last_login %}
-                <p><strong>Last Login:</strong> {{ user.last_login.strftime('%Y-%m-%d %H:%M') }}</p>
-                {% endif %}
+                <div class="mb-3">
+                    <div style="width: 100px; height: 100px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: white; font-size: 40px; font-weight: 700;">
+                        {{ user.full_name[0].upper() if user.full_name else 'U' }}
+                    </div>
+                </div>
+                <h4 class="mb-1">{{ user.full_name }}</h4>
+                <p class="text-muted mb-2">@{{ user.username }}</p>
+                <span class="badge bg-primary">{{ user.role|title }}</span>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mt-3">
+            <div class="card-body">
+                <h6 class="card-title mb-3">Account Information</h6>
+                <div class="mb-3">
+                    <small class="text-muted d-block">Email</small>
+                    <strong>{{ user.email }}</strong>
+                </div>
+                <div class="mb-3">
+                    <small class="text-muted d-block">Member Since</small>
+                    <strong>{{ user.created_at.strftime('%B %d, %Y') if user.created_at else 'N/A' }}</strong>
+                </div>
+                <div>
+                    <small class="text-muted d-block">Last Login</small>
+                    <strong>{{ user.last_login.strftime('%B %d, %Y at %I:%M %p') if user.last_login else 'Never' }}</strong>
+                </div>
             </div>
         </div>
     </div>
-    
-    <div class="col-md-8">
-        <!-- Change Password -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5><i class="fas fa-key me-2"></i>Change Password</h5>
-            </div>
+
+    <div class="col-lg-8">
+        <div class="card shadow-sm mb-4">
             <div class="card-body">
+                <h5 class="card-title mb-4">
+                    <i class="fas fa-chart-bar text-primary me-2"></i>
+                    My Statistics
+                </h5>
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <div class="p-3 bg-light rounded">
+                            <small class="text-muted d-block mb-1">Today's Sales</small>
+                            <h4 class="mb-0">{{ user_stats.today_sales[0] or 0 }}</h4>
+                            <small class="text-success">{{ format_currency(user_stats.today_sales[1] or 0) }}</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="p-3 bg-light rounded">
+                            <small class="text-muted d-block mb-1">This Month</small>
+                            <h4 class="mb-0">{{ user_stats.month_sales[0] or 0 }}</h4>
+                            <small class="text-info">{{ format_currency(user_stats.month_sales[1] or 0) }}</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="p-3 bg-light rounded">
+                            <small class="text-muted d-block mb-1">Total Sales</small>
+                            <h4 class="mb-0">{{ user_stats.total_sales[0] or 0 }}</h4>
+                            <small class="text-primary">{{ format_currency(user_stats.total_sales[1] or 0) }}</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title mb-4">
+                    <i class="fas fa-key text-primary me-2"></i>
+                    Change Password
+                </h5>
                 <form method="POST" action="{{ url_for('change_password') }}">
                     <div class="mb-3">
                         <label for="current_password" class="form-label">Current Password</label>
@@ -34,49 +85,18 @@
                     </div>
                     <div class="mb-3">
                         <label for="new_password" class="form-label">New Password</label>
-                        <input type="password" class="form-control" id="new_password" name="new_password" required>
+                        <input type="password" class="form-control" id="new_password" name="new_password" minlength="6" required>
                         <small class="text-muted">Password must be at least 6 characters long</small>
                     </div>
                     <div class="mb-3">
                         <label for="confirm_password" class="form-label">Confirm New Password</label>
-                        <input type="password" class="form-control" id="confirm_password" name="confirm_password" required>
+                        <input type="password" class="form-control" id="confirm_password" name="confirm_password" minlength="6" required>
                     </div>
                     <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-save me-2"></i>Update Password
+                        <i class="fas fa-save me-2"></i>
+                        Update Password
                     </button>
                 </form>
-            </div>
-        </div>
-
-        <!-- Performance Stats -->
-        <div class="card">
-            <div class="card-header">
-                <h5><i class="fas fa-chart-line me-2"></i>Your Performance</h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-4">
-                        <div class="text-center">
-                            <h4 class="text-primary">{{ user_stats.today_sales[0] }}</h4>
-                            <p>Today's Sales</p>
-                            <small class="text-muted">{{ format_currency(user_stats.today_sales[1]) }}</small>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="text-center">
-                            <h4 class="text-success">{{ user_stats.month_sales[0] }}</h4>
-                            <p>This Month</p>
-                            <small class="text-muted">{{ format_currency(user_stats.month_sales[1]) }}</small>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="text-center">
-                            <h4 class="text-info">{{ user_stats.total_sales[0] }}</h4>
-                            <p>Total Sales</p>
-                            <small class="text-muted">{{ format_currency(user_stats.total_sales[1]) }}</small>
-                        </div>
-                    </div>
-                </div>
             </div>
         </div>
     </div>

@@ -1,128 +1,41 @@
+<!-- ================================ -->
+<!-- categories/add_category.html -->
+<!-- ================================ -->
+
 {% extends "base.html" %}
 
-{% block title %}Add Category - Liquor Store Management{% endblock %}
-
+{% block title %}Add Category - LiquorPro{% endblock %}
 {% block page_title %}Add Category{% endblock %}
+{% block breadcrumb %}Inventory / Categories / Add{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-8 col-lg-6">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">
-                    <i class="fas fa-plus-circle me-2"></i>Add New Category
-                </h5>
-                <a href="{{ url_for('categories') }}" class="btn btn-outline-secondary btn-sm">
-                    <i class="fas fa-arrow-left me-1"></i>Back to Categories
-                </a>
-            </div>
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="card shadow-sm">
             <div class="card-body">
-                <form method="POST" id="addCategoryForm">
+                <form method="POST" action="{{ url_for('add_category') }}">
                     <div class="mb-3">
-                        <label for="name" class="form-label">Category Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="name" name="name" required 
-                               placeholder="e.g., Beer, Wine, Spirits" maxlength="50">
-                        <div class="form-text">Enter a unique category name (max 50 characters)</div>
+                        <label for="name" class="form-label">Category Name *</label>
+                        <input type="text" class="form-control" id="name" name="name" placeholder="e.g., Whiskey, Beer, Wine" required>
                     </div>
 
                     <div class="mb-3">
                         <label for="description" class="form-label">Description</label>
-                        <textarea class="form-control" id="description" name="description" rows="3" 
-                                  placeholder="Optional description of this category" maxlength="200"></textarea>
-                        <div class="form-text">Brief description of this category (max 200 characters)</div>
+                        <textarea class="form-control" id="description" name="description" rows="3" placeholder="Optional description"></textarea>
                     </div>
 
-                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                        <a href="{{ url_for('categories') }}" class="btn btn-secondary">
-                            <i class="fas fa-times me-1"></i>Cancel
-                        </a>
+                    <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-save me-1"></i>Add Category
+                            <i class="fas fa-save me-2"></i>Save Category
                         </button>
+                        <a href="{{ url_for('categories') }}" class="btn btn-secondary">
+                            <i class="fas fa-times me-2"></i>Cancel
+                        </a>
                     </div>
                 </form>
-            </div>
-        </div>
-
-        <!-- Help Card -->
-        <div class="card mt-3">
-            <div class="card-header">
-                <h6 class="mb-0">
-                    <i class="fas fa-info-circle me-2"></i>Category Guidelines
-                </h6>
-            </div>
-            <div class="card-body">
-                <ul class="mb-0">
-                    <li><strong>Use clear names:</strong> Choose descriptive names like "Beer", "Wine", "Spirits"</li>
-                    <li><strong>Keep it simple:</strong> Avoid overly specific categories - use product variants instead</li>
-                    <li><strong>Think organization:</strong> Categories help organize products and generate reports</li>
-                    <li><strong>Consider your market:</strong> Create categories that match your customer preferences</li>
-                </ul>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-md-4 col-lg-6">
-        <div class="card">
-            <div class="card-header">
-                <h6 class="mb-0">
-                    <i class="fas fa-lightbulb me-2"></i>Popular Category Examples
-                </h6>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-sm-6">
-                        <h6 class="text-primary">Alcoholic Beverages</h6>
-                        <ul class="list-unstyled">
-                            <li><i class="fas fa-beer me-1 text-warning"></i>Beer</li>
-                            <li><i class="fas fa-wine-glass me-1 text-danger"></i>Wine</li>
-                            <li><i class="fas fa-cocktail me-1 text-info"></i>Spirits</li>
-                            <li><i class="fas fa-glass-cheers me-1 text-success"></i>Liqueurs</li>
-                            <li><i class="fas fa-apple-alt me-1 text-warning"></i>Ciders</li>
-                        </ul>
-                    </div>
-                    <div class="col-sm-6">
-                        <h6 class="text-primary">Other Products</h6>
-                        <ul class="list-unstyled">
-                            <li><i class="fas fa-tint me-1 text-primary"></i>Non-Alcoholic</li>
-                            <li><i class="fas fa-cookie-bite me-1 text-warning"></i>Snacks</li>
-                            <li><i class="fas fa-tools me-1 text-secondary"></i>Accessories</li>
-                            <li><i class="fas fa-ice-cream me-1 text-info"></i>Ice & Mixers</li>
-                        </ul>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
 </div>
 {% endblock %}
 
-{% block scripts %}
-<script>
-document.getElementById('addCategoryForm').addEventListener('submit', function(e) {
-    const name = document.getElementById('name').value.trim();
-    
-    if (!name) {
-        e.preventDefault();
-        alert('Please enter a category name.');
-        document.getElementById('name').focus();
-        return false;
-    }
-    
-    if (name.length > 50) {
-        e.preventDefault();
-        alert('Category name must be 50 characters or less.');
-        document.getElementById('name').focus();
-        return false;
-    }
-});
-
-// Auto-capitalize first letter
-document.getElementById('name').addEventListener('input', function() {
-    let value = this.value;
-    if (value.length > 0) {
-        this.value = value.charAt(0).toUpperCase() + value.slice(1);
-    }
-});
-</script>
-{% endblock %}

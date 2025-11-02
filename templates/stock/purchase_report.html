@@ -1,0 +1,185 @@
+<!-- templates/stock/purchase_report.html -->
+{% extends "base.html" %}
+
+{% block title %}Stock Purchase Report - Liquor Store{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-chart-line"></i> Stock Purchase Report</h2>
+            <p class="text-muted">Analyze stock purchases and inventory investments</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <button onclick="window.print()" class="btn btn-secondary">
+                <i class="fas fa-print"></i> Print Report
+            </button>
+        </div>
+    </div>
+
+    <!-- Date Filter -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Start Date</label>
+                    <input type="date" name="start_date" class="form-control"
+                           value="{{ start_date.strftime('%Y-%m-%d') }}" required>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">End Date</label>
+                    <input type="date" name="end_date" class="form-control"
+                           value="{{ end_date.strftime('%Y-%m-%d') }}"
+                           max="{{ date.today().strftime('%Y-%m-%d') }}" required>
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-filter"></i> Generate Report
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h6 class="text-uppercase">Total Amount Invested</h6>
+                    <h2 class="mb-0">{{ format_currency(total_spent) }}</h2>
+                    <small>{{ start_date.strftime('%B %d') }} - {{ end_date.strftime('%B %d, %Y') }}</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h6 class="text-uppercase">Total Purchases</h6>
+                    <h2 class="mb-0">{{ total_purchases }}</h2>
+                    <small>Purchase transactions recorded</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Purchase Summary Table -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Purchase Summary by Product</h5>
+        </div>
+        <div class="card-body">
+            {% if purchase_summary %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Category</th>
+                            <th class="text-center">Purchases</th>
+                            <th class="text-end">Total Quantity</th>
+                            <th class="text-end">Avg Unit Cost</th>
+                            <th class="text-end">Total Invested</th>
+                            <th class="text-end">% of Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in purchase_summary %}
+                        <tr>
+                            <td><strong>{{ item.name }}</strong></td>
+                            <td><span class="badge bg-secondary">{{ item.category_name }}</span></td>
+                            <td class="text-center">{{ item.purchase_count }}</td>
+                            <td class="text-end">{{ "%.2f"|format(item.total_quantity) }}</td>
+                            <td class="text-end">{{ format_currency(item.avg_unit_cost) }}</td>
+                            <td class="text-end"><strong>{{ format_currency(item.total_spent) }}</strong></td>
+                            <td class="text-end">
+                                <span class="badge bg-info">
+                                    {{ "%.1f"|format((item.total_spent / total_spent * 100) if total_spent > 0 else 0) }}%
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-info">
+                        <tr>
+                            <th colspan="5" class="text-end">Grand Total:</th>
+                            <th class="text-end">{{ format_currency(total_spent) }}</th>
+                            <th class="text-end">100%</th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <!-- Visual Chart Placeholder -->
+            <div class="mt-4">
+                <h6>Top 10 Products by Investment</h6>
+                <div class="row">
+                    {% for item in purchase_summary[:10] %}
+                    <div class="col-md-6 mb-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>{{ item.name }}</span>
+                            <small class="text-muted">{{ format_currency(item.total_spent) }}</small>
+                        </div>
+                        <div class="progress" style="height: 20px;">
+                            <div class="progress-bar bg-primary"
+                                 style="width: {{ (item.total_spent / total_spent * 100) if total_spent > 0 else 0 }}%">
+                                {{ "%.1f"|format((item.total_spent / total_spent * 100) if total_spent > 0 else 0) }}%
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% else %}
+            <div class="alert alert-info text-center">
+                <i class="fas fa-info-circle fa-2x mb-3"></i>
+                <p class="mb-0">No stock purchases found for the selected date range.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Additional Insights -->
+    {% if purchase_summary %}
+    <div class="row mt-4">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="text-muted">Average Purchase Value</h6>
+                    <h3>{{ format_currency(total_spent / total_purchases if total_purchases > 0 else 0) }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="text-muted">Most Purchased Product</h6>
+                    <h5>{{ purchase_summary[0].name if purchase_summary else '-' }}</h5>
+                    <small class="text-muted">
+                        {{ purchase_summary[0].purchase_count if purchase_summary else 0 }} purchases
+                    </small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="text-muted">Highest Investment</h6>
+                    <h5>{{ purchase_summary[0].name if purchase_summary else '-' }}</h5>
+                    <small class="text-muted">
+                        {{ format_currency(purchase_summary[0].total_spent if purchase_summary else 0) }}
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+@media print {
+    .btn, nav, .breadcrumb { display: none !important; }
+    .card { border: 1px solid #ddd !important; }
+}
+</style>
+{% endblock %}

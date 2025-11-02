@@ -1,799 +1,198 @@
+<!-- reports/reports.html -->
 {% extends "base.html" %}
-{% block title %}Reports - Liquor Store Management{% endblock %}
-{% block page_title %}Reports & Analytics{% endblock %}
+
+{% block title %}Reports - LiquorPro{% endblock %}
+{% block page_title %}Reports{% endblock %}
+{% block breadcrumb %}Financial / Reports{% endblock %}
 
 {% block content %}
-<div class="row mb-4">
+<div class="row mb-3">
     <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center">
-            <h2>Reports & Analytics</h2>
-            <div class="btn-group" role="group">
-                {% if current_user.role in ['admin'] %}
-                <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#summaryToolsModal">
-                    <i class="fas fa-tools me-2"></i>Summary Tools
-                </button>
-                {% endif %}
-                <button type="button" class="btn btn-outline-primary" onclick="printReport()">
-                    <i class="fas fa-print me-2"></i>Print Report
-                </button>
-                <button type="button" class="btn btn-outline-success" onclick="exportToCSV()">
-                    <i class="fas fa-download me-2"></i>Export CSV
-                </button>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <h5>Business Reports</h5>
+                <small class="text-muted">
+                    Period: {{ start_date.strftime('%B %d, %Y') }} - {{ end_date.strftime('%B %d, %Y') }}
+                </small>
             </div>
-        </div>
-    </div>
-</div>
-
-<!-- Summary Tools Modal (Admin Only) -->
-{% if current_user.role in ['admin'] %}
-<div class="modal fade" id="summaryToolsModal" tabindex="-1" aria-labelledby="summaryToolsModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="summaryToolsModalLabel">Daily Summary Management Tools</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div class="alert alert-warning">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    <strong>Admin Tools:</strong> Use these tools to maintain daily summary data integrity.
-                </div>
-
-                <!-- Generate Missing Summaries -->
-                <div class="card mb-3">
-                    <div class="card-body">
-                        <h6 class="card-title"><i class="fas fa-plus me-2"></i>Generate Missing Summaries</h6>
-                        <p class="card-text small text-muted">
-                            Automatically create daily summaries for dates that have sales/expenses but no summary record.
-                        </p>
-                        <form method="POST" action="{{ url_for('generate_missing_summaries') }}" style="display: inline;">
-                            <button type="submit" class="btn btn-sm btn-success"
-                                    onclick="return confirm('Generate missing daily summaries? This will create summaries for all dates with sales/expenses that don\'t have summary records.')">
-                                <i class="fas fa-magic me-1"></i>Generate Missing
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
-                <!-- Rebuild Summaries -->
-                <div class="card">
-                    <div class="card-body">
-                        <h6 class="card-title"><i class="fas fa-sync me-2"></i>Rebuild Summaries</h6>
-                        <p class="card-text small text-muted">
-                            Completely rebuild daily summaries for a specific date range. This will delete existing summaries and recreate them.
-                        </p>
-                        <form method="POST" action="{{ url_for('rebuild_daily_summaries') }}" id="rebuildForm">
-                            <div class="row g-2 mb-3">
-                                <div class="col">
-                                    <label for="rebuild_start_date" class="form-label small">Start Date</label>
-                                    <input type="date" class="form-control form-control-sm" id="rebuild_start_date"
-                                           name="start_date" value="{{ start_date.strftime('%Y-%m-%d') }}" required>
-                                </div>
-                                <div class="col">
-                                    <label for="rebuild_end_date" class="form-label small">End Date</label>
-                                    <input type="date" class="form-control form-control-sm" id="rebuild_end_date"
-                                           name="end_date" value="{{ end_date.strftime('%Y-%m-%d') }}" required>
-                                </div>
-                            </div>
-                            <button type="submit" class="btn btn-sm btn-warning"
-                                    onclick="return confirm('Are you sure you want to rebuild summaries for the selected date range? This will delete and recreate all existing summaries in that period.')">
-                                <i class="fas fa-sync me-1"></i>Rebuild Range
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
-    </div>
-</div>
-{% endif %}
-
-<!-- Date Range Filter -->
-<div class="card mb-4">
-    <div class="card-body">
-        <form method="GET" class="row g-3" id="reportForm">
-            <div class="col-md-3">
-                <label for="start_date" class="form-label">Start Date</label>
-                <input type="date" class="form-control" id="start_date" name="start_date"
+            <form method="GET" action="{{ url_for('reports') }}" class="d-flex gap-2 flex-wrap">
+                <input type="date" class="form-control form-control-sm" name="start_date"
                        value="{{ start_date.strftime('%Y-%m-%d') }}" required>
-            </div>
-            <div class="col-md-3">
-                <label for="end_date" class="form-label">End Date</label>
-                <input type="date" class="form-control" id="end_date" name="end_date"
+                <input type="date" class="form-control form-control-sm" name="end_date"
                        value="{{ end_date.strftime('%Y-%m-%d') }}" required>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Quick Select</label>
-                <div class="btn-group d-block">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setDateRange('today')">Today</button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setDateRange('week')">This Week</button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setDateRange('month')">This Month</button>
-                </div>
-            </div>
-            <div class="col-md-3 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-search me-2"></i>Generate Report
+                <button type="submit" class="btn btn-sm btn-primary">
+                    <i class="fas fa-filter"></i> Apply
                 </button>
-            </div>
-        </form>
+            </form>
+        </div>
     </div>
 </div>
 
-<!-- Summary Cards -->
-<div class="row mb-4">
-    <div class="col-md-3">
-        <div class="card text-white bg-primary">
-            <div class="card-body text-center">
-                <div class="mb-2">
-                    <i class="fas fa-shopping-cart fa-2x"></i>
-                </div>
-                <h6 class="card-title">Total Sales</h6>
-                <h4 class="card-text">{{ format_currency(total_period_sales) }}</h4>
-                <small class="opacity-75">{{ start_date.strftime('%b %d') }} - {{ end_date.strftime('%b %d, %Y') }}</small>
+<!-- Period Summary -->
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-xl-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <small class="text-muted">Total Sales</small>
+                <h4 class="mb-0">{{ format_currency(total_period_sales) }}</h4>
             </div>
         </div>
     </div>
     {% if current_user.role in ['admin', 'manager'] %}
-    <div class="col-md-3">
-        <div class="card text-white bg-success">
-            <div class="card-body text-center">
-                <div class="mb-2">
-                    <i class="fas fa-chart-line fa-2x"></i>
-                </div>
-                <h6 class="card-title">Gross Profit</h6>
-                <h4 class="card-text">{{ format_currency(total_period_profit) }}</h4>
-                <small class="opacity-75">Before expenses</small>
+    <div class="col-sm-6 col-xl-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <small class="text-muted">Gross Profit</small>
+                <h4 class="mb-0 text-success">{{ format_currency(total_period_profit) }}</h4>
             </div>
         </div>
     </div>
     {% endif %}
-    <div class="col-md-3">
-        <div class="card text-white bg-warning">
-            <div class="card-body text-center">
-                <div class="mb-2">
-                    <i class="fas fa-receipt fa-2x"></i>
-                </div>
-                <h6 class="card-title">Total Expenses</h6>
-                <h4 class="card-text">{{ format_currency(total_period_expenses) }}</h4>
-                <small class="opacity-75">All categories</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-{{ 'success' if total_period_net_profit > 0 else 'danger' }}">
-            <div class="card-body text-center">
-                <div class="mb-2">
-                    <i class="fas fa-{{ 'arrow-up' if total_period_net_profit > 0 else 'arrow-down' }} fa-2x"></i>
-                </div>
-                <h6 class="card-title">Net Profit</h6>
-                <h4 class="card-text">{{ format_currency(total_period_net_profit) }}</h4>
-                <small class="opacity-75">After all expenses</small>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Product Performance -->
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Product Performance</h5>
-                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse"
-                        data-bs-target="#productTable" aria-expanded="true">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-            </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="card border-0 shadow-sm">
             <div class="card-body">
-                {% if product_sales %}
-                <div class="collapse show" id="productTable">
-                    <div class="table-responsive">
-                        <table class="table table-hover" id="productPerformanceTable">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Rank</th>
-                                    <th>Product</th>
-                                    <th>Category</th>
-                                    <th>Quantity Sold</th>
-                                    <th>Total Sales</th>
-                                    {% if current_user.role in ['admin', 'manager'] %}
-                                    <th>Total Profit</th>
-                                    <th>Profit Margin</th>
-                                    {% endif %}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for product in product_sales %}
-                                <tr>
-                                    <td>
-                                        <span class="badge bg-{{ 'warning' if loop.index <= 3 else 'secondary' }}">
-                                            #{{ loop.index }}
-                                        </span>
-                                    </td>
-                                    <td><strong>{{ product.name }}</strong></td>
-                                    <td><span class="badge bg-secondary">{{ product.category_name }}</span></td>
-                                    <td>{{ product.total_quantity }}</td>
-                                    <td>{{ format_currency(product.total_sales) }}</td>
-                                    {% if current_user.role in ['admin', 'manager'] %}
-                                    <td>{{ format_currency(product.total_profit) }}</td>
-                                    <td>
-                                        {% if product.total_sales > 0 %}
-                                            <span class="badge bg-{{ 'success' if (product.total_profit / product.total_sales * 100) > 20 else 'warning' if (product.total_profit / product.total_sales * 100) > 10 else 'danger' }}">
-                                                {{ "%.1f"|format(product.total_profit / product.total_sales * 100) }}%
-                                            </span>
-                                        {% else %}
-                                            <span class="badge bg-secondary">0%</span>
-                                        {% endif %}
-                                    </td>
-                                    {% endif %}
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                {% else %}
-                <div class="text-center py-5">
-                    <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
-                    <p class="text-muted">No sales data available for the selected period</p>
-                    <a href="{{ url_for('sales') }}" class="btn btn-primary">
-                        <i class="fas fa-plus me-2"></i>Record First Sale
-                    </a>
-                </div>
-                {% endif %}
+                <small class="text-muted">Total Expenses</small>
+                <h4 class="mb-0 text-danger">{{ format_currency(total_period_expenses) }}</h4>
             </div>
         </div>
     </div>
-</div>
-
-<!-- Attendant Performance (Admin/Manager only) -->
-{% if current_user.role in ['admin', 'manager'] and attendant_performance %}
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="fas fa-users me-2"></i>Attendant Performance</h5>
-                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse"
-                        data-bs-target="#attendantTable" aria-expanded="true">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-            </div>
+    {% if current_user.role in ['admin', 'manager'] %}
+    <div class="col-sm-6 col-xl-3">
+        <div class="card border-0 shadow-sm">
             <div class="card-body">
-                <div class="collapse show" id="attendantTable">
-                    <div class="table-responsive">
-                        <table class="table table-hover" id="attendantPerformanceTable">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Rank</th>
-                                    <th>Attendant</th>
-                                    <th>Transactions</th>
-                                    <th>Items Sold</th>
-                                    <th>Total Sales</th>
-                                    <th>Profit Generated</th>
-                                    <th>Avg. Sale Value</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for attendant in attendant_performance %}
-                                <tr>
-                                    <td>
-                                        <span class="badge bg-{{ 'warning' if loop.index <= 3 else 'secondary' }}">
-                                            #{{ loop.index }}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <div class="d-flex align-items-center">
-                                            <i class="fas fa-user-circle me-2 text-muted"></i>
-                                            <strong>{{ attendant.full_name }}</strong>
-                                        </div>
-                                    </td>
-                                    <td>{{ attendant.total_transactions }}</td>
-                                    <td>{{ attendant.total_quantity }}</td>
-                                    <td>{{ format_currency(attendant.total_sales) }}</td>
-                                    <td>{{ format_currency(attendant.total_profit) }}</td>
-                                    <td>
-                                        {% if attendant.total_transactions > 0 %}
-                                            {{ format_currency(attendant.total_sales / attendant.total_transactions) }}
-                                        {% else %}
-                                            {{ format_currency(0) }}
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                <small class="text-muted">Net Profit</small>
+                <h4 class="mb-0 {{ 'text-success' if total_period_net_profit >= 0 else 'text-danger' }}">
+                    {{ format_currency(total_period_net_profit) }}
+                </h4>
             </div>
         </div>
     </div>
+    {% endif %}
 </div>
-{% endif %}
 
 <!-- Daily Summaries -->
 {% if daily_summaries %}
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="fas fa-calendar me-2"></i>Daily Summary</h5>
-                <div class="d-flex gap-2">
-                    {% if current_user.role in ['admin'] %}
-                    <small class="text-muted align-self-center">
-                        Last updated: {{ daily_summaries[0].updated_at.strftime('%Y-%m-%d %H:%M') if daily_summaries and daily_summaries[0].updated_at else 'Never' }}
-                    </small>
-                    {% endif %}
-                    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse"
-                            data-bs-target="#dailyTable" aria-expanded="true">
-                        <i class="fas fa-chevron-up"></i>
-                    </button>
-                </div>
-            </div>
-            <div class="card-body">
-                <div class="collapse show" id="dailyTable">
-                    <div class="table-responsive">
-                        <table class="table table-hover table-striped" id="dailySummaryTable">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Day</th>
-                                    <th>Transactions</th>
-                                    <th>Sales</th>
-                                    {% if current_user.role in ['admin', 'manager'] %}
-                                    <th>Gross Profit</th>
-                                    {% endif %}
-                                    <th>Expenses</th>
-                                    {% if current_user.role in ['admin', 'manager'] %}
-                                    <th>Net Profit</th>
-                                    <th>Profit Margin</th>
-                                    {% endif %}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for summary in daily_summaries %}
-                                <tr>
-                                    <td>
-                                        <strong>{{ summary.date.strftime('%Y-%m-%d') }}</strong>
-                                    </td>
-                                    <td>
-                                        <small class="text-muted">{{ summary.date.strftime('%A') }}</small>
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-info">{{ summary.total_transactions or 0 }}</span>
-                                    </td>
-                                    <td>{{ format_currency(summary.total_sales or 0) }}</td>
-                                    {% if current_user.role in ['admin', 'manager'] %}
-                                    <td>{{ format_currency(summary.total_profit or 0) }}</td>
-                                    {% endif %}
-                                    <td>{{ format_currency(summary.total_expenses or 0) }}</td>
-                                    {% if current_user.role in ['admin', 'manager'] %}
-                                    <td class="text-{{ 'success' if (summary.net_profit or 0) > 0 else 'danger' }}">
-                                        <strong>{{ format_currency(summary.net_profit or 0) }}</strong>
-                                    </td>
-                                    <td>
-                                        {% if (summary.total_sales or 0) > 0 %}
-                                            <span class="badge bg-{{ 'success' if ((summary.net_profit or 0) / summary.total_sales * 100) > 15 else 'warning' if ((summary.net_profit or 0) / summary.total_sales * 100) > 5 else 'danger' }}">
-                                                {{ "%.1f"|format((summary.net_profit or 0) / summary.total_sales * 100) }}%
-                                            </span>
-                                        {% else %}
-                                            <span class="badge bg-secondary">0%</span>
-                                        {% endif %}
-                                    </td>
-                                    {% endif %}
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                            <tfoot class="table-light">
-                                <tr>
-                                    <th colspan="3">TOTALS</th>
-                                    <th>{{ format_currency(total_period_sales) }}</th>
-                                    {% if current_user.role in ['admin', 'manager'] %}
-                                    <th>{{ format_currency(total_period_profit) }}</th>
-                                    {% endif %}
-                                    <th>{{ format_currency(total_period_expenses) }}</th>
-                                    {% if current_user.role in ['admin', 'manager'] %}
-                                    <th class="text-{{ 'success' if total_period_net_profit > 0 else 'danger' }}">
-                                        <strong>{{ format_currency(total_period_net_profit) }}</strong>
-                                    </th>
-                                    <th>
-                                        {% if total_period_sales > 0 %}
-                                            <span class="badge bg-{{ 'success' if (total_period_net_profit / total_period_sales * 100) > 15 else 'warning' if (total_period_net_profit / total_period_sales * 100) > 5 else 'danger' }}">
-                                                {{ "%.1f"|format(total_period_net_profit / total_period_sales * 100) }}%
-                                            </span>
-                                        {% else %}
-                                            <span class="badge bg-secondary">0%</span>
-                                        {% endif %}
-                                    </th>
-                                    {% endif %}
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
+<div class="card shadow-sm mb-4">
+    <div class="card-header">
+        <h6 class="mb-0"><i class="fas fa-calendar-day me-2"></i>Daily Summaries</h6>
     </div>
-</div>
-{% else %}
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-body text-center py-5">
-                <i class="fas fa-calendar-times fa-3x text-muted mb-3"></i>
-                <h5 class="text-muted">No data available for selected period</h5>
-                <p class="text-muted">Try selecting a different date range or check if there are any sales recorded.</p>
-                {% if current_user.role in ['admin'] %}
-                <div class="mt-3">
-                    <button type="button" class="btn btn-info me-2" data-bs-toggle="modal" data-bs-target="#summaryToolsModal">
-                        <i class="fas fa-magic me-2"></i>Generate Missing Summaries
-                    </button>
-                </div>
-                {% endif %}
-                <a href="{{ url_for('sales') }}" class="btn btn-primary">
-                    <i class="fas fa-plus me-2"></i>Record Sales
-                </a>
-            </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Transactions</th>
+                        <th>Sales</th>
+                        {% if current_user.role in ['admin', 'manager'] %}
+                        <th>Profit</th>
+                        {% endif %}
+                        <th>Expenses</th>
+                        {% if current_user.role in ['admin', 'manager'] %}
+                        <th>Net Profit</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for summary in daily_summaries %}
+                    <tr>
+                        <td><strong>{{ summary.date.strftime('%a, %b %d') }}</strong></td>
+                        <td>{{ summary.total_transactions }}</td>
+                        <td>{{ format_currency(summary.total_sales) }}</td>
+                        {% if current_user.role in ['admin', 'manager'] %}
+                        <td class="text-success">{{ format_currency(summary.total_profit) }}</td>
+                        {% endif %}
+                        <td class="text-danger">{{ format_currency(summary.total_expenses) }}</td>
+                        {% if current_user.role in ['admin', 'manager'] %}
+                        <td class="{{ 'text-success' if summary.net_profit >= 0 else 'text-danger' }}">
+                            {{ format_currency(summary.net_profit) }}
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
 {% endif %}
 
-<!-- Charts Row (if data is available) -->
-{% if daily_summaries %}
-<div class="row mb-4">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h6 class="mb-0"><i class="fas fa-chart-line me-2"></i>Sales Trend</h6>
-            </div>
-            <div class="card-body">
-                <canvas id="salesTrendChart" height="200"></canvas>
-            </div>
+<!-- Product Sales -->
+{% if product_sales %}
+<div class="card shadow-sm mb-4">
+    <div class="card-header">
+        <h6 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Top Products</h6>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Product</th>
+                        <th>Category</th>
+                        <th>Quantity Sold</th>
+                        <th>Total Sales</th>
+                        {% if current_user.role in ['admin', 'manager'] %}
+                        <th>Total Profit</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for product in product_sales %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td><strong>{{ product.name }}</strong></td>
+                        <td>{{ product.category_name }}</td>
+                        <td>{{ product.total_quantity }}</td>
+                        <td>{{ format_currency(product.total_sales) }}</td>
+                        {% if current_user.role in ['admin', 'manager'] %}
+                        <td class="text-success">{{ format_currency(product.total_profit) }}</td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
-    {% if current_user.role in ['admin', 'manager'] %}
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h6 class="mb-0"><i class="fas fa-chart-pie me-2"></i>Sales vs Expenses</h6>
-            </div>
-            <div class="card-body">
-                <canvas id="profitChart" height="200"></canvas>
-            </div>
-        </div>
-    </div>
-    {% endif %}
 </div>
 {% endif %}
 
-<!-- No Data Message -->
-{% if not product_sales and not daily_summaries %}
-<div class="row">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-body text-center py-5">
-                <i class="fas fa-chart-bar fa-4x text-muted mb-4"></i>
-                <h4 class="text-muted mb-3">No Report Data Available</h4>
-                <p class="text-muted mb-4">There's no sales or expense data for the selected date range.</p>
-                {% if current_user.role in ['admin'] %}
-                <div class="mb-3">
-                    <button type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#summaryToolsModal">
-                        <i class="fas fa-magic me-2"></i>Check Summary Tools
-                    </button>
-                </div>
-                {% endif %}
-                <div class="d-flex justify-content-center gap-3">
-                    <a href="{{ url_for('sales') }}" class="btn btn-primary">
-                        <i class="fas fa-shopping-cart me-2"></i>Record Sales
-                    </a>
-                    <a href="{{ url_for('expenses') }}" class="btn btn-secondary">
-                        <i class="fas fa-receipt me-2"></i>Record Expenses
-                    </a>
-                </div>
-            </div>
+<!-- Attendant Performance (Admin/Manager only) -->
+{% if current_user.role in ['admin', 'manager'] and attendant_performance %}
+<div class="card shadow-sm">
+    <div class="card-header">
+        <h6 class="mb-0"><i class="fas fa-users me-2"></i>Attendant Performance</h6>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Attendant</th>
+                        <th>Transactions</th>
+                        <th>Items Sold</th>
+                        <th>Total Sales</th>
+                        <th>Total Profit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for performance in attendant_performance %}
+                    <tr>
+                        <td><strong>{{ performance.full_name }}</strong></td>
+                        <td>{{ performance.total_transactions }}</td>
+                        <td>{{ performance.total_quantity }}</td>
+                        <td>{{ format_currency(performance.total_sales) }}</td>
+                        <td class="text-success">{{ format_currency(performance.total_profit) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
 {% endif %}
 {% endblock %}
 
-{% block scripts %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-<script>
-// Date range helper functions
-function setDateRange(period) {
-    const today = new Date();
-    const startDateInput = document.getElementById('start_date');
-    const endDateInput = document.getElementById('end_date');
 
-    let startDate, endDate;
 
-    switch(period) {
-        case 'today':
-            startDate = endDate = today;
-            break;
-        case 'week':
-            startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay());
-            endDate = today;
-            break;
-        case 'month':
-            startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-            endDate = today;
-            break;
-    }
-
-    startDateInput.value = startDate.toISOString().split('T')[0];
-    endDateInput.value = endDate.toISOString().split('T')[0];
-}
-
-// Print function
-function printReport() {
-    window.print();
-}
-
-// Export to CSV function
-function exportToCSV() {
-    // Create CSV content from the tables
-    let csv = 'Liquor Store Management Report\n';
-    csv += 'Generated: ' + new Date().toLocaleDateString() + '\n\n';
-
-    // Add summary data
-    csv += 'SUMMARY\n';
-    csv += 'Period,' + '{{ start_date.strftime("%Y-%m-%d") }}' + ' to ' + '{{ end_date.strftime("%Y-%m-%d") }}' + '\n';
-    csv += 'Total Sales,' + '{{ total_period_sales }}' + '\n';
-    {% if current_user.role in ['admin', 'manager'] %}
-    csv += 'Gross Profit,' + '{{ total_period_profit }}' + '\n';
-    {% endif %}
-    csv += 'Total Expenses,' + '{{ total_period_expenses }}' + '\n';
-    {% if current_user.role in ['admin', 'manager'] %}
-    csv += 'Net Profit,' + '{{ total_period_net_profit }}' + '\n';
-    {% endif %}
-    csv += '\n';
-
-    // Add product performance data
-    {% if product_sales %}
-    csv += 'PRODUCT PERFORMANCE\n';
-    csv += 'Rank,Product,Category,Quantity Sold,Total Sales';
-    {% if current_user.role in ['admin', 'manager'] %}
-    csv += ',Total Profit,Profit Margin %';
-    {% endif %}
-    csv += '\n';
-
-    {% for product in product_sales %}
-    csv += '{{ loop.index }},{{ product.name|replace(",", ";") }},{{ product.category_name|replace(",", ";") }},{{ product.total_quantity }},{{ product.total_sales }}';
-    {% if current_user.role in ['admin', 'manager'] %}
-    {% set margin = (product.total_profit / product.total_sales * 100) if product.total_sales > 0 else 0 %}
-    csv += ',{{ product.total_profit }},{{ "%.1f"|format(margin) }}';
-    {% endif %}
-    csv += '\n';
-    {% endfor %}
-    csv += '\n';
-    {% endif %}
-
-    // Add daily summaries
-    {% if daily_summaries %}
-    csv += 'DAILY SUMMARIES\n';
-    csv += 'Date,Day,Transactions,Sales,';
-    {% if current_user.role in ['admin', 'manager'] %}
-    csv += 'Gross Profit,';
-    {% endif %}
-    csv += 'Expenses';
-    {% if current_user.role in ['admin', 'manager'] %}
-    csv += ',Net Profit,Profit Margin %';
-    {% endif %}
-    csv += '\n';
-
-    {% for summary in daily_summaries %}
-    csv += '{{ summary.date.strftime("%Y-%m-%d") }},{{ summary.date.strftime("%A") }},{{ summary.total_transactions or 0 }},{{ summary.total_sales or 0 }},';
-    {% if current_user.role in ['admin', 'manager'] %}
-    csv += '{{ summary.total_profit or 0 }},';
-    {% endif %}
-    csv += '{{ summary.total_expenses or 0 }}';
-    {% if current_user.role in ['admin', 'manager'] %}
-    {% set daily_margin = ((summary.net_profit or 0) / (summary.total_sales or 1) * 100) if (summary.total_sales or 0) > 0 else 0 %}
-    csv += ',{{ summary.net_profit or 0 }},{{ "%.1f"|format(daily_margin) }}';
-    {% endif %}
-    csv += '\n';
-    {% endfor %}
-    {% endif %}
-
-    // Download CSV
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'liquor_store_report_{{ start_date.strftime("%Y%m%d") }}_{{ end_date.strftime("%Y%m%d") }}.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-}
-
-// Charts
-{% if daily_summaries %}
-document.addEventListener('DOMContentLoaded', function() {
-    // Sales Trend Chart
-    const salesCtx = document.getElementById('salesTrendChart').getContext('2d');
-    const salesData = {
-        labels: [
-            {% for summary in daily_summaries|reverse %}
-            '{{ summary.date.strftime("%m-%d") }}'{% if not loop.last %},{% endif %}
-            {% endfor %}
-        ],
-        datasets: [{
-            label: 'Sales',
-            data: [
-                {% for summary in daily_summaries|reverse %}
-                {{ summary.total_sales or 0 }}{% if not loop.last %},{% endif %}
-                {% endfor %}
-            ],
-            borderColor: 'rgb(54, 162, 235)',
-            backgroundColor: 'rgba(54, 162, 235, 0.1)',
-            tension: 0.1,
-            fill: true
-        }{% if current_user.role in ['admin', 'manager'] %},
-        {
-            label: 'Expenses',
-            data: [
-                {% for summary in daily_summaries|reverse %}
-                {{ summary.total_expenses or 0 }}{% if not loop.last %},{% endif %}
-                {% endfor %}
-            ],
-            borderColor: 'rgb(255, 99, 132)',
-            backgroundColor: 'rgba(255, 99, 132, 0.1)',
-            tension: 0.1,
-            fill: true
-        }{% endif %}]
-    };
-
-    new Chart(salesCtx, {
-        type: 'line',
-        data: salesData,
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        callback: function(value) {
-                            return 'KES ' + value.toLocaleString();
-                        }
-                    }
-                }
-            },
-            plugins: {
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return context.dataset.label + ': KES ' + context.parsed.y.toLocaleString();
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    {% if current_user.role in ['admin', 'manager'] %}
-    // Profit vs Expenses Pie Chart
-    const profitCtx = document.getElementById('profitChart').getContext('2d');
-    const totalSales = {{ total_period_sales }};
-    const totalExpenses = {{ total_period_expenses }};
-    const totalProfit = {{ total_period_profit }};
-
-    new Chart(profitCtx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Gross Profit', 'Expenses'],
-            datasets: [{
-                data: [totalProfit, totalExpenses],
-                backgroundColor: [
-                    'rgba(75, 192, 192, 0.8)',
-                    'rgba(255, 159, 64, 0.8)'
-                ],
-                borderColor: [
-                    'rgb(75, 192, 192)',
-                    'rgb(255, 159, 64)'
-                ],
-                borderWidth: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom'
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                            const percentage = ((context.parsed / total) * 100).toFixed(1);
-                            return context.label + ': KES ' + context.parsed.toLocaleString() + ' (' + percentage + '%)';
-                        }
-                    }
-                }
-            }
-        }
-    });
-    {% endif %}
-});
-{% endif %}
-
-// Form validation
-document.getElementById('reportForm').addEventListener('submit', function(e) {
-    const startDate = new Date(document.getElementById('start_date').value);
-    const endDate = new Date(document.getElementById('end_date').value);
-
-    if (startDate > endDate) {
-        e.preventDefault();
-        alert('Start date cannot be later than end date!');
-        return false;
-    }
-
-    const today = new Date();
-    if (startDate > today || endDate > today) {
-        if (!confirm('You have selected future dates. Continue anyway?')) {
-            e.preventDefault();
-            return false;
-        }
-    }
-});
-
-// Rebuild form validation
-{% if current_user.role in ['admin'] %}
-document.getElementById('rebuildForm').addEventListener('submit', function(e) {
-    const startDate = new Date(document.getElementById('rebuild_start_date').value);
-    const endDate = new Date(document.getElementById('rebuild_end_date').value);
-
-    if (startDate > endDate) {
-        e.preventDefault();
-        alert('Start date cannot be later than end date!');
-        return false;
-    }
-});
-{% endif %}
-
-// Collapse toggle icons
-document.querySelectorAll('[data-bs-toggle="collapse"]').forEach(function(element) {
-    element.addEventListener('click', function() {
-        const icon = this.querySelector('i');
-        const target = document.querySelector(this.getAttribute('data-bs-target'));
-
-        target.addEventListener('shown.bs.collapse', function() {
-            icon.className = 'fas fa-chevron-up';
-        });
-
-        target.addEventListener('hidden.bs.collapse', function() {
-            icon.className = 'fas fa-chevron-down';
-        });
-    });
-});
-
-// Print styles
-const printStyles = `
-<style>
-@media print {
-    .btn, .navbar, .sidebar, .card-header button, .no-print, .modal { display: none !important; }
-    .main-content { margin-left: 0 !important; }
-    .card { border: 1px solid #dee2e6 !important; page-break-inside: avoid; }
-    .table { font-size: 12px; }
-    .card-body { padding: 1rem !important; }
-    .collapse { display: block !important; }
-    body { font-size: 12px; }
-    h2, h5, h6 { color: #000 !important; }
-    .text-success, .text-danger { color: #000 !important; }
-    .bg-success, .bg-danger, .bg-warning, .bg-secondary {
-        background-color: #f8f9fa !important;
-        color: #000 !important;
-    }
-}
-</style>`;
-
-document.head.insertAdjacentHTML('beforeend', printStyles);
-</script>
-{% endblock %}

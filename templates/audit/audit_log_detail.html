@@ -1,307 +1,111 @@
+<!-- ================================ -->
+<!-- audit/audit_log_detail.html -->
+<!-- ================================ -->
+
 {% extends "base.html" %}
 
-{% block title %}Audit Log Detail - Liquor Store Management{% endblock %}
+{% block title %}Audit Log Detail - LiquorPro{% endblock %}
 {% block page_title %}Audit Log Detail{% endblock %}
+{% block breadcrumb %}Admin / Audit Logs / Detail{% endblock %}
 
 {% block content %}
-<div class="row">
+<div class="row mb-3">
     <div class="col-12">
-        <!-- Back button -->
-        <div class="mb-3">
-            <a href="{{ url_for('audit_logs') }}" class="btn btn-outline-secondary">
-                <i class="fas fa-arrow-left me-2"></i>Back to Audit Logs
-            </a>
-        </div>
+        <a href="{{ url_for('audit_logs') }}" class="btn btn-secondary btn-sm">
+            <i class="fas fa-arrow-left me-2"></i>Back to Audit Logs
+        </a>
+    </div>
+</div>
 
-        <!-- Main audit log card -->
-        <div class="card">
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow-sm mb-4">
             <div class="card-header">
-                <div class="row align-items-center">
-                    <div class="col">
-                        <h5 class="card-title mb-0">
-                            <i class="fas fa-file-alt me-2"></i>Audit Log Entry #{{ audit_log.id }}
-                        </h5>
-                    </div>
-                    <div class="col-auto">
-                        {% set action_colors = {
-                            'CREATE': 'success',
-                            'UPDATE': 'warning',
-                            'DELETE': 'danger',
-                            'LOGIN': 'info',
-                            'LOGOUT': 'secondary',
-                            'ERROR': 'danger',
-                            'REBUILD': 'primary'
-                        } %}
-                        <span class="badge bg-{{ action_colors.get(audit_log.action, 'secondary') }} fs-6">
-                            {{ audit_log.action }}
-                        </span>
-                    </div>
-                </div>
+                <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>Log Information</h6>
             </div>
             <div class="card-body">
-                <!-- Basic Information -->
-                <div class="row mb-4">
-                    <div class="col-md-6">
-                        <h6 class="text-muted mb-3">
-                            <i class="fas fa-info-circle me-2"></i>Basic Information
-                        </h6>
-                        <table class="table table-sm table-borderless">
-                            <tr>
-                                <td class="fw-semibold" style="width: 30%;">Timestamp:</td>
-                                <td>{{ audit_log.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC') }}</td>
-                            </tr>
-                            <tr>
-                                <td class="fw-semibold">User:</td>
-                                <td>
-                                    <div class="d-flex align-items-center">
-                                        <i class="fas fa-user-circle me-2 text-muted"></i>
-                                        <div>
-                                            <div>{{ audit_log.user.full_name }}</div>
-                                            <small class="text-muted">{{ audit_log.user.username }} ({{ audit_log.user.role }})</small>
-                                        </div>
-                                    </div>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="fw-semibold">Action:</td>
-                                <td>
-                                    <span class="badge bg-{{ action_colors.get(audit_log.action, 'secondary') }}">
-                                        {{ audit_log.action }}
-                                    </span>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="fw-semibold">Table:</td>
-                                <td>
-                                    <span class="badge bg-light text-dark">
-                                        {{ audit_log.table_name.replace('_', ' ').title() }}
-                                    </span>
-                                </td>
-                            </tr>
-                            {% if audit_log.record_id %}
-                            <tr>
-                                <td class="fw-semibold">Record ID:</td>
-                                <td><code>{{ audit_log.record_id }}</code></td>
-                            </tr>
+                <table class="table table-bordered">
+                    <tr>
+                        <th width="30%">Log ID</th>
+                        <td>{{ audit_log.id }}</td>
+                    </tr>
+                    <tr>
+                        <th>Timestamp</th>
+                        <td>{{ audit_log.timestamp.strftime('%A, %B %d, %Y at %I:%M %p') }}</td>
+                    </tr>
+                    <tr>
+                        <th>User</th>
+                        <td>
+                            <strong>{{ audit_log.user.full_name }}</strong>
+                            <br><small class="text-muted">{{ audit_log.user.email }} ({{ audit_log.user.role }})</small>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Action</th>
+                        <td>
+                            {% if audit_log.action == 'CREATE' %}
+                            <span class="badge bg-success">{{ audit_log.action }}</span>
+                            {% elif audit_log.action == 'UPDATE' %}
+                            <span class="badge bg-info">{{ audit_log.action }}</span>
+                            {% elif audit_log.action == 'DELETE' %}
+                            <span class="badge bg-danger">{{ audit_log.action }}</span>
+                            {% else %}
+                            <span class="badge bg-warning">{{ audit_log.action }}</span>
                             {% endif %}
-                        </table>
-                    </div>
-                    <div class="col-md-6">
-                        <h6 class="text-muted mb-3">
-                            <i class="fas fa-network-wired me-2"></i>Session Information
-                        </h6>
-                        <table class="table table-sm table-borderless">
-                            <tr>
-                                <td class="fw-semibold" style="width: 30%;">IP Address:</td>
-                                <td>
-                                    {% if audit_log.ip_address %}
-                                    <code>{{ audit_log.ip_address }}</code>
-                                    {% else %}
-                                    <span class="text-muted">Not recorded</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="fw-semibold">User Agent:</td>
-                                <td>
-                                    {% if audit_log.user_agent %}
-                                    <small class="text-break">{{ audit_log.user_agent }}</small>
-                                    {% else %}
-                                    <span class="text-muted">Not recorded</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Changes Summary -->
-                {% if audit_log.changes_summary %}
-                <div class="mb-4">
-                    <h6 class="text-muted mb-3">
-                        <i class="fas fa-edit me-2"></i>Changes Summary
-                    </h6>
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle me-2"></i>
-                        {{ audit_log.changes_summary }}
-                    </div>
-                </div>
-                {% endif %}
-
-                <!-- Detailed Changes -->
-                {% if old_values or new_values %}
-                <div class="row">
-                    <!-- Old Values -->
-                    {% if old_values %}
-                    <div class="col-md-6 mb-4">
-                        <h6 class="text-muted mb-3">
-                            <i class="fas fa-history me-2"></i>Previous Values
-                        </h6>
-                        <div class="card border-danger">
-                            <div class="card-body">
-                                {% if old_values is mapping %}
-                                <table class="table table-sm table-striped mb-0">
-                                    {% for key, value in old_values.items() %}
-                                    {% if key not in ['id', 'created_at', 'updated_at', 'timestamp', 'password_hash'] %}
-                                    <tr>
-                                        <td class="fw-semibold text-nowrap" style="width: 40%;">
-                                            {{ key.replace('_', ' ').title() }}:
-                                        </td>
-                                        <td class="text-break">
-                                            {% if value is none %}
-                                            <span class="text-muted fst-italic">null</span>
-                                            {% elif value is sameas true %}
-                                            <span class="badge bg-success">True</span>
-                                            {% elif value is sameas false %}
-                                            <span class="badge bg-secondary">False</span>
-                                            {% elif key in ['amount', 'price', 'cost', 'total'] and value is number %}
-                                            <span class="text-danger">{{ "KES {:,.2f}"|format(value) }}</span>
-                                            {% elif key in ['date', 'created_at', 'updated_at'] and value %}
-                                            <small>{{ value }}</small>
-                                            {% else %}
-                                            {{ value }}
-                                            {% endif %}
-                                        </td>
-                                    </tr>
-                                    {% endif %}
-                                    {% endfor %}
-                                </table>
-                                {% else %}
-                                <pre class="mb-0 text-danger"><small>{{ old_values }}</small></pre>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                    {% endif %}
-
-                    <!-- New Values -->
-                    {% if new_values %}
-                    <div class="col-md-6 mb-4">
-                        <h6 class="text-muted mb-3">
-                            <i class="fas fa-plus-circle me-2"></i>New Values
-                        </h6>
-                        <div class="card border-success">
-                            <div class="card-body">
-                                {% if new_values is mapping %}
-                                <table class="table table-sm table-striped mb-0">
-                                    {% for key, value in new_values.items() %}
-                                    {% if key not in ['id', 'created_at', 'updated_at', 'timestamp', 'password_hash'] %}
-                                    <tr>
-                                        <td class="fw-semibold text-nowrap" style="width: 40%;">
-                                            {{ key.replace('_', ' ').title() }}:
-                                        </td>
-                                        <td class="text-break">
-                                            {% if value is none %}
-                                            <span class="text-muted fst-italic">null</span>
-                                            {% elif value is sameas true %}
-                                            <span class="badge bg-success">True</span>
-                                            {% elif value is sameas false %}
-                                            <span class="badge bg-secondary">False</span>
-                                            {% elif key in ['amount', 'price', 'cost', 'total'] and value is number %}
-                                            <span class="text-success">{{ "KES {:,.2f}"|format(value) }}</span>
-                                            {% elif key in ['date', 'created_at', 'updated_at'] and value %}
-                                            <small>{{ value }}</small>
-                                            {% else %}
-                                            {% if old_values and old_values is mapping and old_values.get(key) != value %}
-                                            <mark class="bg-warning bg-opacity-25">{{ value }}</mark>
-                                            {% else %}
-                                            {{ value }}
-                                            {% endif %}
-                                            {% endif %}
-                                        </td>
-                                    </tr>
-                                    {% endif %}
-                                    {% endfor %}
-                                </table>
-                                {% else %}
-                                <pre class="mb-0 text-success"><small>{{ new_values }}</small></pre>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                    {% endif %}
-                </div>
-                {% endif %}
-
-                <!-- Raw JSON Data (Collapsible) -->
-                {% if audit_log.old_values or audit_log.new_values %}
-                <div class="accordion" id="rawDataAccordion">
-                    <div class="accordion-item">
-                        <h2 class="accordion-header">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#rawDataCollapse">
-                                <i class="fas fa-code me-2"></i>Raw JSON Data
-                            </button>
-                        </h2>
-                        <div id="rawDataCollapse" class="accordion-collapse collapse" data-bs-parent="#rawDataAccordion">
-                            <div class="accordion-body">
-                                {% if audit_log.old_values %}
-                                <div class="mb-3">
-                                    <h6>Old Values (Raw JSON):</h6>
-                                    <pre class="bg-light p-3 rounded border"><code>{{ audit_log.old_values }}</code></pre>
-                                </div>
-                                {% endif %}
-                                {% if audit_log.new_values %}
-                                <div class="mb-3">
-                                    <h6>New Values (Raw JSON):</h6>
-                                    <pre class="bg-light p-3 rounded border"><code>{{ audit_log.new_values }}</code></pre>
-                                </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Table Name</th>
+                        <td><code>{{ audit_log.table_name }}</code></td>
+                    </tr>
+                    <tr>
+                        <th>Record ID</th>
+                        <td>{{ audit_log.record_id or 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <th>IP Address</th>
+                        <td>{{ audit_log.ip_address or 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <th>User Agent</th>
+                        <td><small>{{ audit_log.user_agent or 'N/A' }}</small></td>
+                    </tr>
+                </table>
             </div>
-            <div class="card-footer text-muted">
-                <small>
-                    <i class="fas fa-clock me-2"></i>
-                    Log created on {{ audit_log.timestamp.strftime('%A, %B %d, %Y at %I:%M %p UTC') }}
-                </small>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="fas fa-edit me-2"></i>Changes Summary</h6>
+            </div>
+            <div class="card-body">
+                <p>{{ audit_log.changes_summary or 'No summary available' }}</p>
             </div>
         </div>
     </div>
+
+    <div class="col-lg-4">
+        {% if old_values %}
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-danger text-white">
+                <h6 class="mb-0">Old Values</h6>
+            </div>
+            <div class="card-body">
+                <pre class="mb-0" style="font-size: 12px;">{{ old_values|tojson(indent=2) }}</pre>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if new_values %}
+        <div class="card shadow-sm">
+            <div class="card-header bg-success text-white">
+                <h6 class="mb-0">New Values</h6>
+            </div>
+            <div class="card-body">
+                <pre class="mb-0" style="font-size: 12px;">{{ new_values|tojson(indent=2) }}</pre>
+            </div>
+        </div>
+        {% endif %}
+    </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Add syntax highlighting to JSON code blocks (if you want to add a library like Prism.js later)
-    const codeBlocks = document.querySelectorAll('pre code');
-    codeBlocks.forEach(block => {
-        // Basic JSON formatting
-        try {
-            const jsonText = block.textContent;
-            const parsed = JSON.parse(jsonText);
-            const formatted = JSON.stringify(parsed, null, 2);
-            block.textContent = formatted;
-        } catch (e) {
-            // Not valid JSON, leave as is
-        }
-    });
-
-    // Add copy to clipboard functionality for code blocks
-    codeBlocks.forEach(block => {
-        const button = document.createElement('button');
-        button.className = 'btn btn-sm btn-outline-secondary position-absolute top-0 end-0 m-2';
-        button.innerHTML = '<i class="fas fa-copy"></i>';
-        button.title = 'Copy to clipboard';
-        
-        const container = block.closest('pre');
-        if (container) {
-            container.style.position = 'relative';
-            container.appendChild(button);
-            
-            button.addEventListener('click', function() {
-                navigator.clipboard.writeText(block.textContent).then(() => {
-                    button.innerHTML = '<i class="fas fa-check text-success"></i>';
-                    setTimeout(() => {
-                        button.innerHTML = '<i class="fas fa-copy"></i>';
-                    }, 2000);
-                });
-            });
-        }
-    });
-});
-</script>
 {% endblock %}

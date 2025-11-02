@@ -8,7 +8,8 @@ from decimal import Decimal
 import re
 
 # Import models from your models.py file
-from models import db, User, Category, Size, ExpenseCategory, Product, ProductVariant, Expense, DailyStock, Sale, DailySummary, AuditLog
+from models import db, User, Category, Size, ExpenseCategory, Product, ProductVariant, Expense, DailyStock, Sale, \
+    DailySummary, AuditLog, StockPurchase
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here-change-in-production'
@@ -18,8 +19,13 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle': 300,
 }
+# Make "today" available globally in all templates
+app.jinja_env.globals['today'] = date.today()
 
 db.init_app(app)
+
+
+
 
 
 # Helper Functions
@@ -183,6 +189,49 @@ def update_daily_stock_sales(product_id, stock_date):
     daily_stock.calculate_closing_stock()
 
     return daily_stock
+
+
+def update_daily_summary(target_date):
+    """Update or create daily summary for a specific date"""
+    try:
+        # Calculate sales for the date
+        sales_data = db.session.query(
+            db.func.count(Sale.id).label('transaction_count'),
+            db.func.coalesce(db.func.sum(Sale.total_amount), 0).label('total_sales'),
+            db.func.coalesce(db.func.sum(
+                Sale.total_amount - (Product.base_buying_price * ProductVariant.conversion_factor * Sale.quantity)),
+                             0).label('total_profit')
+        ).join(ProductVariant).join(Product).filter(
+            Sale.sale_date == target_date
+        ).first()
+
+        # Calculate expenses for the date
+        expenses_data = db.session.query(
+            db.func.count(Expense.id).label('expense_count'),
+            db.func.coalesce(db.func.sum(Expense.amount), 0).label('total_expenses')
+        ).filter(
+            Expense.expense_date == target_date
+        ).first()
+
+        # Update or create daily summary
+        summary = DailySummary.query.filter_by(date=target_date).first()
+        if not summary:
+            summary = DailySummary(date=target_date)
+            db.session.add(summary)
+
+        summary.total_transactions = sales_data.transaction_count or 0
+        summary.total_sales = sales_data.total_sales or 0
+        summary.total_profit = sales_data.total_profit or 0
+        summary.total_expenses = expenses_data.total_expenses or 0
+        summary.expense_count = expenses_data.expense_count or 0
+        summary.net_profit = (sales_data.total_profit or 0) - (expenses_data.total_expenses or 0)
+        summary.updated_at = datetime.now(timezone.utc)
+
+        return summary
+
+    except Exception as e:
+        app.logger.error(f"Error updating daily summary for {target_date}: {str(e)}")
+        return None
 
 
 # Authentication decorators
@@ -460,7 +509,7 @@ def add_user():
         flash(f'User {full_name} created successfully!', 'success')
         return redirect(url_for('users'))
 
-    return render_template('add_user.html')
+    return render_template('admin/add_user.html')
 
 
 @app.route('/users')
@@ -495,6 +544,140 @@ def toggle_user_status(user_id):
 
     db.session.commit()
     flash(f'User {user.full_name} has been {status}', 'success')
+    return redirect(url_for('users'))
+
+
+@app.route('/edit_user/<int:user_id>', methods=['GET', 'POST'])
+@admin_required
+def edit_user(user_id):
+    user = db.session.get(User, user_id)
+    if not user:
+        flash('User not found!', 'error')
+        return redirect(url_for('users'))
+
+    if request.method == 'POST':
+        old_values = user.to_dict()
+
+        username = request.form['username'].strip()
+        email = request.form['email'].strip().lower()
+        full_name = request.form['full_name'].strip()
+        role = request.form['role']
+
+        # Check if username exists (excluding current user)
+        existing = User.query.filter(User.username == username, User.id != user_id).first()
+        if existing:
+            flash('Username already exists!', 'error')
+            return render_template('admin/edit_user.html', user=user)
+
+        # Check if email exists (excluding current user)
+        existing = User.query.filter(User.email == email, User.id != user_id).first()
+        if existing:
+            flash('Email already exists!', 'error')
+            return render_template('admin/edit_user.html', user=user)
+
+        if not validate_email(email):
+            flash('Please enter a valid email address!', 'error')
+            return render_template('admin/edit_user.html', user=user)
+
+        user.username = username
+        user.email = email
+        user.full_name = full_name
+        user.role = role
+
+        new_values = user.to_dict()
+        changes_summary = get_changes_summary(old_values, new_values)
+
+        create_audit_log(
+            action='UPDATE',
+            table_name='user',
+            record_id=user.id,
+            old_values=old_values,
+            new_values=new_values,
+            changes_summary=f"User updated: {user.full_name} - {changes_summary}"
+        )
+
+        db.session.commit()
+        flash(f'User "{user.full_name}" updated successfully!', 'success')
+        return redirect(url_for('users'))
+
+    return render_template('admin/edit_user.html', user=user)
+
+
+@app.route('/admin/reset_user_password/<int:user_id>', methods=['POST'])
+@admin_required
+def reset_user_password(user_id):
+    user = db.session.get(User, user_id)
+    if not user:
+        flash('User not found!', 'error')
+        return redirect(url_for('users'))
+
+    new_password = request.form['new_password']
+    confirm_password = request.form['confirm_password']
+    notify_user = request.form.get('notify_user') == 'on'
+
+    if new_password != confirm_password:
+        flash('Passwords do not match!', 'error')
+        return redirect(url_for('users'))
+
+    if len(new_password) < 6:
+        flash('Password must be at least 6 characters long!', 'error')
+        return redirect(url_for('users'))
+
+    user.set_password(new_password)
+
+    create_audit_log(
+        action='UPDATE',
+        table_name='user',
+        record_id=user.id,
+        changes_summary=f"Password reset for user {user.full_name} by admin"
+    )
+
+    db.session.commit()
+
+    flash_msg = f'Password for "{user.full_name}" has been reset successfully!'
+    if notify_user:
+        flash_msg += ' User should be notified of the change.'
+
+    flash(flash_msg, 'success')
+    return redirect(url_for('users'))
+
+
+@app.route('/delete_user/<int:user_id>', methods=['POST'])
+@admin_required
+def delete_user(user_id):
+    current_user = get_current_user()
+
+    # Prevent self-deletion
+    if user_id == current_user.id:
+        flash('You cannot delete your own account!', 'error')
+        return redirect(url_for('users'))
+
+    user = db.session.get(User, user_id)
+    if not user:
+        flash('User not found!', 'error')
+        return redirect(url_for('users'))
+
+    # Check if user has sales records
+    has_sales = Sale.query.filter_by(attendant_id=user_id).first()
+    if has_sales:
+        flash(f'Cannot delete user "{user.full_name}" - they have sales records. Consider deactivating instead.',
+              'error')
+        return redirect(url_for('users'))
+
+    old_values = user.to_dict()
+    user_name = user.full_name
+
+    create_audit_log(
+        action='DELETE',
+        table_name='user',
+        record_id=user_id,
+        old_values=old_values,
+        changes_summary=f"User deleted: {user_name}"
+    )
+
+    db.session.delete(user)
+    db.session.commit()
+    flash(f'User "{user_name}" deleted successfully!', 'success')
     return redirect(url_for('users'))
 
 
@@ -547,6 +730,105 @@ def add_category():
     return render_template('categories/add_category.html')
 
 
+@app.route('/edit_category/<int:category_id>', methods=['GET', 'POST'])
+@admin_required
+def edit_category(category_id):
+    category = db.session.get(Category, category_id)
+    if not category:
+        flash('Category not found!', 'error')
+        return redirect(url_for('categories'))
+
+    if request.method == 'POST':
+        old_values = category.to_dict()
+
+        name = request.form['name'].strip()
+        description = request.form.get('description', '').strip()
+
+        # Check if name already exists (excluding current category)
+        existing = Category.query.filter(Category.name == name, Category.id != category_id).first()
+        if existing:
+            flash('Category name already exists!', 'error')
+            return render_template('categories/edit_category.html', category=category)
+
+        category.name = name
+        category.description = description if description else None
+
+        new_values = category.to_dict()
+        changes_summary = get_changes_summary(old_values, new_values)
+
+        create_audit_log(
+            action='UPDATE',
+            table_name='category',
+            record_id=category.id,
+            old_values=old_values,
+            new_values=new_values,
+            changes_summary=f"Category updated: {category.name} - {changes_summary}"
+        )
+
+        db.session.commit()
+        flash(f'Category "{category.name}" updated successfully!', 'success')
+        return redirect(url_for('categories'))
+
+    return render_template('categories/edit_category.html', category=category)
+
+
+@app.route('/toggle_category_status/<int:category_id>', methods=['POST'])
+@admin_required
+def toggle_category_status(category_id):
+    category = db.session.get(Category, category_id)
+    if not category:
+        flash('Category not found!', 'error')
+        return redirect(url_for('categories'))
+
+    old_values = category.to_dict()
+    category.is_active = not category.is_active
+    new_values = category.to_dict()
+
+    status = "activated" if category.is_active else "deactivated"
+
+    create_audit_log(
+        action='UPDATE',
+        table_name='category',
+        record_id=category.id,
+        old_values=old_values,
+        new_values=new_values,
+        changes_summary=f"Category {category.name} has been {status}"
+    )
+
+    db.session.commit()
+    flash(f'Category "{category.name}" has been {status}', 'success')
+    return redirect(url_for('categories'))
+
+
+@app.route('/delete_category/<int:category_id>', methods=['POST'])
+@admin_required
+def delete_category(category_id):
+    category = db.session.get(Category, category_id)
+    if not category:
+        flash('Category not found!', 'error')
+        return redirect(url_for('categories'))
+
+    # Check if category has products
+    if category.products:
+        flash(f'Cannot delete category "{category.name}" - it has {len(category.products)} product(s) associated with it!', 'error')
+        return redirect(url_for('categories'))
+
+    old_values = category.to_dict()
+    category_name = category.name
+
+    create_audit_log(
+        action='DELETE',
+        table_name='category',
+        record_id=category_id,
+        old_values=old_values,
+        changes_summary=f"Category deleted: {category_name}"
+    )
+
+    db.session.delete(category)
+    db.session.commit()
+    flash(f'Category "{category_name}" deleted successfully!', 'success')
+    return redirect(url_for('categories'))
+
 # SIZE MANAGEMENT ROUTES
 @app.route('/sizes')
 @admin_required
@@ -598,6 +880,109 @@ def add_size():
     return render_template('sizes/add_size.html')
 
 
+@app.route('/edit_size/<int:size_id>', methods=['GET', 'POST'])
+@admin_required
+def edit_size(size_id):
+    size = db.session.get(Size, size_id)
+    if not size:
+        flash('Size not found!', 'error')
+        return redirect(url_for('sizes'))
+
+    if request.method == 'POST':
+        old_values = size.to_dict()
+
+        name = request.form['name'].strip()
+        description = request.form.get('description', '').strip()
+        sort_order = safe_float(request.form.get('sort_order', 0))
+
+        # Check if name already exists (excluding current size)
+        existing = Size.query.filter(Size.name == name, Size.id != size_id).first()
+        if existing:
+            flash('Size name already exists!', 'error')
+            return render_template('sizes/edit_size.html', size=size)
+
+        size.name = name
+        size.description = description if description else None
+        size.sort_order = int(sort_order)
+
+        new_values = size.to_dict()
+        changes_summary = get_changes_summary(old_values, new_values)
+
+        create_audit_log(
+            action='UPDATE',
+            table_name='size',
+            record_id=size.id,
+            old_values=old_values,
+            new_values=new_values,
+            changes_summary=f"Size updated: {size.name} - {changes_summary}"
+        )
+
+        db.session.commit()
+        flash(f'Size "{size.name}" updated successfully!', 'success')
+        return redirect(url_for('sizes'))
+
+    return render_template('sizes/edit_size.html', size=size)
+
+
+@app.route('/toggle_size_status/<int:size_id>', methods=['POST'])
+@admin_required
+def toggle_size_status(size_id):
+    size = db.session.get(Size, size_id)
+    if not size:
+        flash('Size not found!', 'error')
+        return redirect(url_for('sizes'))
+
+    old_values = size.to_dict()
+    size.is_active = not size.is_active
+    new_values = size.to_dict()
+
+    status = "activated" if size.is_active else "deactivated"
+
+    create_audit_log(
+        action='UPDATE',
+        table_name='size',
+        record_id=size.id,
+        old_values=old_values,
+        new_values=new_values,
+        changes_summary=f"Size {size.name} has been {status}"
+    )
+
+    db.session.commit()
+    flash(f'Size "{size.name}" has been {status}', 'success')
+    return redirect(url_for('sizes'))
+
+
+@app.route('/delete_size/<int:size_id>', methods=['POST'])
+@admin_required
+def delete_size(size_id):
+    size = db.session.get(Size, size_id)
+    if not size:
+        flash('Size not found!', 'error')
+        return redirect(url_for('sizes'))
+
+    # Check if size has product variants
+    if size.product_variants:
+        flash(f'Cannot delete size "{size.name}" - it has {len(size.product_variants)} variant(s) associated with it!',
+              'error')
+        return redirect(url_for('sizes'))
+
+    old_values = size.to_dict()
+    size_name = size.name
+
+    create_audit_log(
+        action='DELETE',
+        table_name='size',
+        record_id=size_id,
+        old_values=old_values,
+        changes_summary=f"Size deleted: {size_name}"
+    )
+
+    db.session.delete(size)
+    db.session.commit()
+    flash(f'Size "{size_name}" deleted successfully!', 'success')
+    return redirect(url_for('sizes'))
+
+
 # EXPENSE CATEGORY ROUTES
 @app.route('/expense_categories')
 @admin_required
@@ -645,6 +1030,108 @@ def add_expense_category():
         return redirect(url_for('expense_categories'))
 
     return render_template('expenses/add_expense_category.html')
+
+
+@app.route('/edit_expense_category/<int:category_id>', methods=['GET', 'POST'])
+@admin_required
+def edit_expense_category(category_id):
+    category = db.session.get(ExpenseCategory, category_id)
+    if not category:
+        flash('Expense category not found!', 'error')
+        return redirect(url_for('expense_categories'))
+
+    if request.method == 'POST':
+        old_values = category.to_dict()
+
+        name = request.form['name'].strip()
+        description = request.form.get('description', '').strip()
+
+        # Check if name already exists (excluding current category)
+        existing = ExpenseCategory.query.filter(ExpenseCategory.name == name, ExpenseCategory.id != category_id).first()
+        if existing:
+            flash('Expense category name already exists!', 'error')
+            return render_template('expenses/edit_expense_category.html', category=category)
+
+        category.name = name
+        category.description = description if description else None
+
+        new_values = category.to_dict()
+        changes_summary = get_changes_summary(old_values, new_values)
+
+        create_audit_log(
+            action='UPDATE',
+            table_name='expense_category',
+            record_id=category.id,
+            old_values=old_values,
+            new_values=new_values,
+            changes_summary=f"Expense category updated: {category.name} - {changes_summary}"
+        )
+
+        db.session.commit()
+        flash(f'Expense category "{category.name}" updated successfully!', 'success')
+        return redirect(url_for('expense_categories'))
+
+    return render_template('expenses/edit_expense_category.html', category=category)
+
+
+@app.route('/toggle_expense_category_status/<int:category_id>', methods=['POST'])
+@admin_required
+def toggle_expense_category_status(category_id):
+    category = db.session.get(ExpenseCategory, category_id)
+    if not category:
+        flash('Expense category not found!', 'error')
+        return redirect(url_for('expense_categories'))
+
+    old_values = category.to_dict()
+    category.is_active = not category.is_active
+    new_values = category.to_dict()
+
+    status = "activated" if category.is_active else "deactivated"
+
+    create_audit_log(
+        action='UPDATE',
+        table_name='expense_category',
+        record_id=category.id,
+        old_values=old_values,
+        new_values=new_values,
+        changes_summary=f"Expense category {category.name} has been {status}"
+    )
+
+    db.session.commit()
+    flash(f'Expense category "{category.name}" has been {status}', 'success')
+    return redirect(url_for('expense_categories'))
+
+
+@app.route('/delete_expense_category/<int:category_id>', methods=['POST'])
+@admin_required
+def delete_expense_category(category_id):
+    category = db.session.get(ExpenseCategory, category_id)
+    if not category:
+        flash('Expense category not found!', 'error')
+        return redirect(url_for('expense_categories'))
+
+    # Check if category has expenses
+    if category.expenses:
+        flash(
+            f'Cannot delete expense category "{category.name}" - it has {len(category.expenses)} expense(s) associated with it!',
+            'error')
+        return redirect(url_for('expense_categories'))
+
+    old_values = category.to_dict()
+    category_name = category.name
+
+    create_audit_log(
+        action='DELETE',
+        table_name='expense_category',
+        record_id=category_id,
+        old_values=old_values,
+        changes_summary=f"Expense category deleted: {category_name}"
+    )
+
+    db.session.delete(category)
+    db.session.commit()
+    flash(f'Expense category "{category_name}" deleted successfully!', 'success')
+    return redirect(url_for('expense_categories'))
 
 
 # PRODUCT MANAGEMENT ROUTES
@@ -759,6 +1246,98 @@ def products():
                            categories=categories,
                            selected_category_id=category_id,
                            selected_stock_status=stock_status)
+
+
+@app.route('/edit_product/<int:product_id>', methods=['GET', 'POST'])
+@admin_required
+def edit_product(product_id):
+    product = db.session.get(Product, product_id)
+    if not product:
+        flash('Product not found!', 'error')
+        return redirect(url_for('products'))
+
+    if request.method == 'POST':
+        old_values = product.to_dict()
+
+        name = request.form['name'].strip()
+        category_id = int(request.form['category_id'])
+        base_unit = request.form['base_unit'].strip()
+        base_buying_price = safe_float(request.form['base_buying_price'])
+        min_stock_level = safe_float(request.form['min_stock_level'])
+
+        # Check if name already exists (excluding current product)
+        existing = Product.query.filter(Product.name == name, Product.id != product_id).first()
+        if existing:
+            flash('Product name already exists!', 'error')
+            categories = Category.query.filter_by(is_active=True).order_by(Category.name).all()
+            return render_template('products/edit_product.html', product=product, categories=categories)
+
+        # Validate category
+        category = db.session.get(Category, category_id)
+        if not category or not category.is_active:
+            flash('Invalid category selected!', 'error')
+            categories = Category.query.filter_by(is_active=True).order_by(Category.name).all()
+            return render_template('products/edit_product.html', product=product, categories=categories)
+
+        product.name = name
+        product.category_id = category_id
+        product.base_unit = base_unit
+        product.base_buying_price = base_buying_price
+        product.min_stock_level = min_stock_level
+
+        new_values = product.to_dict()
+        changes_summary = get_changes_summary(old_values, new_values)
+
+        create_audit_log(
+            action='UPDATE',
+            table_name='product',
+            record_id=product.id,
+            old_values=old_values,
+            new_values=new_values,
+            changes_summary=f"Product updated: {product.name} - {changes_summary}"
+        )
+
+        db.session.commit()
+        flash(f'Product "{product.name}" updated successfully!', 'success')
+        return redirect(url_for('products'))
+
+    categories = Category.query.filter_by(is_active=True).order_by(Category.name).all()
+    return render_template('products/edit_product.html', product=product, categories=categories)
+
+
+@app.route('/delete_product/<int:product_id>', methods=['POST'])
+@admin_required
+def delete_product(product_id):
+    product = db.session.get(Product, product_id)
+    if not product:
+        flash('Product not found!', 'error')
+        return redirect(url_for('products'))
+
+    # Check if product has sales
+    has_sales = Sale.query.join(ProductVariant).filter(ProductVariant.product_id == product_id).first()
+    if has_sales:
+        flash(f'Cannot delete product "{product.name}" - it has sales records associated with it!', 'error')
+        return redirect(url_for('products'))
+
+    old_values = product.to_dict()
+    product_name = product.name
+
+    # Delete all variants first
+    for variant in product.variants:
+        db.session.delete(variant)
+
+    create_audit_log(
+        action='DELETE',
+        table_name='product',
+        record_id=product_id,
+        old_values=old_values,
+        changes_summary=f"Product deleted: {product_name}"
+    )
+
+    db.session.delete(product)
+    db.session.commit()
+    flash(f'Product "{product_name}" and all its variants deleted successfully!', 'success')
+    return redirect(url_for('products'))
 
 
 # PRODUCT VARIANT ROUTES
@@ -908,8 +1487,39 @@ def toggle_variant_status(variant_id):
     return redirect(url_for('product_variants', product_id=variant.product_id))
 
 
-# SALES ROUTES
-from datetime import datetime, date
+@app.route('/delete_variant/<int:variant_id>', methods=['POST'])
+@admin_required
+def delete_variant(variant_id):
+    variant = db.session.get(ProductVariant, variant_id)
+    if not variant:
+        flash('Product variant not found!', 'error')
+        return redirect(url_for('products'))
+
+    # Check if variant has sales
+    has_sales = Sale.query.filter_by(variant_id=variant_id).first()
+    if has_sales:
+        flash(f'Cannot delete variant "{variant.get_display_name()}" - it has sales records associated with it!', 'error')
+        return redirect(url_for('product_variants', product_id=variant.product_id))
+
+    old_values = variant.to_dict()
+    variant_name = variant.get_display_name()
+    product_id = variant.product_id
+
+    create_audit_log(
+        action='DELETE',
+        table_name='product_variant',
+        record_id=variant_id,
+        old_values=old_values,
+        changes_summary=f"Variant deleted: {variant_name}"
+    )
+
+    db.session.delete(variant)
+    db.session.commit()
+    flash(f'Variant "{variant_name}" deleted successfully!', 'success')
+    return redirect(url_for('product_variants', product_id=product_id))
+
+
+
 
 # SALES ROUTES
 @app.route('/sales')
@@ -960,7 +1570,7 @@ def sales():
             Size.is_active == True
         ).order_by(Category.name, Product.name, Size.sort_order).all()
 
-    today = date.today()  # ✅ Add this
+    today = date.today()
 
     return render_template(
         'sales/sales.html',
@@ -972,56 +1582,9 @@ def sales():
         total_profit=totals['profit'],
         variants=variants,
         current_user=current_user,
-        today=today  # ✅ Pass to template
+        today=today
     )
 
-
-# Add this helper function after the existing helper functions (around line 150)
-
-def update_daily_summary(target_date):
-    """Update or create daily summary for a specific date"""
-    try:
-        # Calculate sales for the date
-        sales_data = db.session.query(
-            db.func.count(Sale.id).label('transaction_count'),
-            db.func.coalesce(db.func.sum(Sale.total_amount), 0).label('total_sales'),
-            db.func.coalesce(db.func.sum(
-                Sale.total_amount - (Product.base_buying_price * ProductVariant.conversion_factor * Sale.quantity)),
-                             0).label('total_profit')
-        ).join(ProductVariant).join(Product).filter(
-            Sale.sale_date == target_date
-        ).first()
-
-        # Calculate expenses for the date
-        expenses_data = db.session.query(
-            db.func.count(Expense.id).label('expense_count'),
-            db.func.coalesce(db.func.sum(Expense.amount), 0).label('total_expenses')
-        ).filter(
-            Expense.expense_date == target_date
-        ).first()
-
-        # Update or create daily summary
-        summary = DailySummary.query.filter_by(date=target_date).first()
-        if not summary:
-            summary = DailySummary(date=target_date)
-            db.session.add(summary)
-
-        summary.total_transactions = sales_data.transaction_count or 0
-        summary.total_sales = sales_data.total_sales or 0
-        summary.total_profit = sales_data.total_profit or 0
-        summary.total_expenses = expenses_data.total_expenses or 0
-        summary.expense_count = expenses_data.expense_count or 0
-        summary.net_profit = (sales_data.total_profit or 0) - (expenses_data.total_expenses or 0)
-        summary.updated_at = datetime.now(timezone.utc)
-
-        return summary
-
-    except Exception as e:
-        app.logger.error(f"Error updating daily summary for {target_date}: {str(e)}")
-        return None
-
-
-# UPDATED SALES ROUTES
 
 @app.route('/add_sale', methods=['POST'])
 @login_required
@@ -1029,10 +1592,8 @@ def add_sale():
     try:
         current_user = get_current_user()
 
-        # Determine sale type - direct product or variant
-        sale_type = request.form.get('sale_type', 'variant')
-
-        # Extract common form data
+        # Extract form data
+        variant_id = int(request.form.get('variant_id'))
         quantity = safe_float(request.form.get('quantity', 0))
         unit_price = safe_float(request.form.get('unit_price', 0))
 
@@ -1061,79 +1622,17 @@ def add_sale():
             flash('Invalid sale date format.', 'error')
             return redirect(url_for('sales'))
 
-        # Handle direct product sales vs variant sales
-        if sale_type == 'direct':
-            # Direct product sale - create a temporary variant for this sale
-            product_id = int(request.form.get('product_id'))
-            product = db.session.get(Product, product_id)
+        # Get variant
+        variant = db.session.get(ProductVariant, variant_id)
+        if not variant or not variant.is_active:
+            flash('Selected product variant not found or inactive.', 'error')
+            return redirect(url_for('sales'))
 
-            if not product:
-                flash('Selected product not found.', 'error')
-                return redirect(url_for('sales'))
-
-            # Check stock availability (direct sale uses base units)
-            if quantity > product.get_available_stock():
-                flash(f'Insufficient stock! Only {product.get_available_stock()} {product.base_unit}s available.',
-                      'error')
-                return redirect(url_for('sales'))
-
-            # For direct sales, we need to create a temporary variant or handle it differently
-            # Option 1: Create a one-time variant entry
-            # Option 2: Modify Sale model to handle direct product sales
-            # Option 3: Use conversion factor of 1.0 for direct sales
-
-            # I'll use Option 3 - treat as variant with 1.0 conversion factor
-            # First, check if a "default" variant exists for this product
-            default_size = Size.query.filter_by(name='Default').first()
-            if not default_size:
-                # Create a default size if it doesn't exist
-                default_size = Size(
-                    name='Default',
-                    description='Default product size for direct sales',
-                    sort_order=0,
-                    created_by=current_user.id
-                )
-                db.session.add(default_size)
-                db.session.flush()
-
-            # Check if default variant exists for this product
-            default_variant = ProductVariant.query.filter_by(
-                product_id=product.id,
-                size_id=default_size.id
-            ).first()
-
-            if not default_variant:
-                # Create default variant with 1.0 conversion factor
-                default_variant = ProductVariant(
-                    product_id=product.id,
-                    size_id=default_size.id,
-                    selling_price=unit_price,  # Use the price from form
-                    conversion_factor=1.0,  # 1:1 ratio for direct sales
-                    created_by=current_user.id
-                )
-                db.session.add(default_variant)
-                db.session.flush()
-            else:
-                # Update the selling price for this sale
-                default_variant.selling_price = unit_price
-
-            # Use this default variant for the sale
-            variant = default_variant
-
-        else:
-            # Variant sale (existing logic)
-            variant_id = int(request.form.get('variant_id'))
-            variant = db.session.get(ProductVariant, variant_id)
-
-            if not variant or not variant.is_active:
-                flash('Selected product variant not found or inactive.', 'error')
-                return redirect(url_for('sales'))
-
-            # Check if we can sell the requested quantity
-            if not variant.can_sell_quantity(quantity):
-                available = variant.get_available_stock_in_variant_units()
-                flash(f'Insufficient stock! Only {available} units of {variant.get_display_name()} available.', 'error')
-                return redirect(url_for('sales'))
+        # Check if we can sell the requested quantity
+        if not variant.can_sell_quantity(quantity):
+            available = variant.get_available_stock_in_variant_units()
+            flash(f'Insufficient stock! Only {available} units of {variant.get_display_name()} available.', 'error')
+            return redirect(url_for('sales'))
 
         # Validate discount permissions
         if discount_type != 'none' and discount_value > 0:
@@ -1204,8 +1703,7 @@ def add_sale():
         db.session.flush()
 
         # Create audit log
-        sale_type_description = "Direct sale" if sale_type == 'direct' else "Variant sale"
-        changes_summary = f"{sale_type_description}: {variant.get_display_name()} x{quantity} @ KES {unit_price}"
+        changes_summary = f"Sale: {variant.get_display_name()} x{quantity} @ KES {unit_price}"
         if sale.discount_amount > 0:
             changes_summary += f" (Discount: -KES {sale.discount_amount:.2f}, Final: KES {sale.total_amount:.2f})"
             if sale.discount_reason:
@@ -1425,7 +1923,9 @@ def delete_sale(sale_id):
     return redirect(url_for('sales'))
 
 
-# DAILY STOCK ROUTES
+# STOCK MANAGEMENT ROUTES
+# Replace the /daily_stock route in app.py with this:
+
 @app.route('/daily_stock')
 @login_required
 def daily_stock():
@@ -1435,6 +1935,7 @@ def daily_stock():
     except ValueError:
         selected_date = date.today()
 
+    # Get stock data
     stock_data = db.session.query(Product, Category, DailyStock).select_from(Product) \
         .join(Category, Product.category_id == Category.id) \
         .outerjoin(DailyStock, (Product.id == DailyStock.product_id) & (DailyStock.date == selected_date)) \
@@ -1455,7 +1956,16 @@ def daily_stock():
                 previous_stock.closing_stock if previous_stock and previous_stock.closing_stock is not None
                 else product.current_stock
             )
-            temp_stock.additions = 0
+
+            # Calculate additions from purchases ONLY
+            purchase_additions = db.session.query(
+                db.func.coalesce(db.func.sum(StockPurchase.quantity), 0)
+            ).filter(
+                StockPurchase.product_id == product.id,
+                StockPurchase.purchase_date == selected_date
+            ).scalar() or 0
+
+            temp_stock.additions = purchase_additions
 
             # Calculate sales in base units for this date
             total_base_units_sold = db.session.query(
@@ -1468,19 +1978,49 @@ def daily_stock():
             temp_stock.sales_quantity = total_base_units_sold
             temp_stock.calculate_closing_stock()
             daily_stock = temp_stock
+        else:
+            # Ensure additions reflects actual purchases
+            purchase_additions = db.session.query(
+                db.func.coalesce(db.func.sum(StockPurchase.quantity), 0)
+            ).filter(
+                StockPurchase.product_id == product.id,
+                StockPurchase.purchase_date == selected_date
+            ).scalar() or 0
+
+            # Update if different (this syncs any discrepancies)
+            if daily_stock.additions != purchase_additions:
+                daily_stock.additions = purchase_additions
+                daily_stock.calculate_closing_stock()
 
         processed_stock_data.append((product, category, daily_stock))
 
+    # Get purchases for this date
+    daily_purchases = StockPurchase.query.filter_by(
+        purchase_date=selected_date
+    ).order_by(StockPurchase.timestamp.desc()).all()
+
+    # Calculate total purchases for the day
+    purchase_total = sum(purchase.total_cost for purchase in daily_purchases)
+
+    # Get active products for the purchase form dropdown
+    active_products = Product.query.join(Category).filter(
+        Category.is_active == True
+    ).order_by(Category.name, Product.name).all()
+
     return render_template('stock/daily_stock.html',
                            stock_data=processed_stock_data,
-                           selected_date=selected_date)
+                           selected_date=selected_date,
+                           daily_purchases=daily_purchases,
+                           purchase_total=purchase_total,
+                           active_products=active_products,
+                           today=date.today())
 
-
-# UPDATED DAILY STOCK ROUTE (to update summaries when stock is manually adjusted)
+# Replace the /update_stock route in app.py with this simpler version:
 
 @app.route('/update_stock', methods=['POST'])
 @admin_required
 def update_stock():
+    """Update only opening stock - additions come from purchases only"""
     try:
         data = request.json
         product_id = data['product_id']
@@ -1494,16 +2034,39 @@ def update_stock():
         daily_stock = get_or_create_daily_stock(product_id, stock_date)
         old_values = daily_stock.to_dict()
 
-        daily_stock.opening_stock = safe_float(data.get('opening_stock', 0))
-        daily_stock.additions = safe_float(data.get('additions', 0))
+        # Only update opening stock
+        manual_opening = safe_float(data.get('opening_stock', 0))
+        daily_stock.opening_stock = manual_opening
+
+        # Additions are ALWAYS calculated from purchases
+        purchase_additions = db.session.query(
+            db.func.coalesce(db.func.sum(StockPurchase.quantity), 0)
+        ).filter(
+            StockPurchase.product_id == product_id,
+            StockPurchase.purchase_date == stock_date
+        ).scalar() or 0
+
+        daily_stock.additions = purchase_additions
         daily_stock.updated_by = current_user.id
         daily_stock.updated_at = datetime.now(timezone.utc)
 
-        # Recalculate sales and closing stock
-        daily_stock = update_daily_stock_sales(product_id, stock_date)
+        # Recalculate closing stock
+        opening = daily_stock.opening_stock if daily_stock.opening_stock is not None else 0
+        additions = purchase_additions
+        sales = daily_stock.sales_quantity if daily_stock.sales_quantity is not None else 0
+
+        daily_stock.closing_stock = max(0, opening + additions - sales)
+
+        # Update product's current stock
+        product.current_stock = daily_stock.closing_stock
+        product.last_stock_update = datetime.now(timezone.utc)
+
         new_values = daily_stock.to_dict()
 
         changes_summary = get_changes_summary(old_values, new_values)
+        if purchase_additions > 0:
+            changes_summary += f" (Includes {purchase_additions} from purchases)"
+
         create_audit_log(
             action='UPDATE',
             table_name='daily_stock',
@@ -1513,7 +2076,7 @@ def update_stock():
             changes_summary=f"Stock updated for {product.name} on {stock_date.strftime('%Y-%m-%d')}: {changes_summary}"
         )
 
-        # Update daily summary since stock was manually adjusted
+        # Update daily summary
         update_daily_summary(stock_date)
 
         db.session.commit()
@@ -1522,6 +2085,8 @@ def update_stock():
             'success': True,
             'closing_stock': daily_stock.closing_stock,
             'sales_quantity': daily_stock.sales_quantity,
+            'additions': additions,
+            'purchase_additions': purchase_additions,
             'message': f'Stock updated successfully by {current_user.full_name}',
             'current_stock': product.current_stock
         })
@@ -1534,109 +2099,279 @@ def update_stock():
         app.logger.error(f"Error updating stock: {str(e)}")
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
-
-# ADD NEW ROUTE TO MANUALLY REBUILD DAILY SUMMARIES (ADMIN ONLY)
-
-@app.route('/rebuild_daily_summaries', methods=['POST'])
+# STOCK PURCHASE ROUTES
+@app.route('/add_stock_purchase', methods=['POST'])
 @admin_required
-def rebuild_daily_summaries():
-    """Rebuild all daily summaries from scratch (Admin only)"""
+def add_stock_purchase():
     try:
-        start_date_str = request.form.get('start_date')
-        end_date_str = request.form.get('end_date')
+        product_id = int(request.form.get('product_id'))
+        quantity = safe_float(request.form.get('quantity'))
+        unit_cost = safe_float(request.form.get('unit_cost'))
+        supplier_name = request.form.get('supplier_name', '').strip()
+        invoice_number = request.form.get('invoice_number', '').strip()
+        purchase_date_str = request.form.get('purchase_date')
+        notes = request.form.get('notes', '').strip()
 
-        if not start_date_str or not end_date_str:
-            flash('Please provide both start and end dates.', 'error')
-            return redirect(url_for('reports'))
+        current_user = get_current_user()
 
-        start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-        end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+        # Validate inputs
+        if not product_id or quantity <= 0 or unit_cost <= 0:
+            flash('Please fill in all required fields with valid values!', 'error')
+            return redirect(request.referrer or url_for('daily_stock'))
 
-        if start_date > end_date:
-            flash('Start date cannot be later than end date.', 'error')
-            return redirect(url_for('reports'))
+        # Parse date
+        try:
+            purchase_date = datetime.strptime(purchase_date_str, '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            flash('Invalid purchase date format.', 'error')
+            return redirect(request.referrer or url_for('daily_stock'))
 
-        # Delete existing summaries in the range
-        DailySummary.query.filter(
-            DailySummary.date.between(start_date, end_date)
-        ).delete()
+        # Get product
+        product = db.session.get(Product, product_id)
+        if not product:
+            flash('Product not found!', 'error')
+            return redirect(request.referrer or url_for('daily_stock'))
 
-        # Rebuild summaries for each day in the range
-        current_date = start_date
-        rebuilt_count = 0
+        # Calculate total cost
+        total_cost = quantity * unit_cost
 
-        while current_date <= end_date:
-            summary = update_daily_summary(current_date)
-            if summary:
-                rebuilt_count += 1
-            current_date += timedelta(days=1)
-
-        create_audit_log(
-            action='REBUILD',
-            table_name='daily_summary',
-            changes_summary=f"Daily summaries rebuilt for {start_date} to {end_date} ({rebuilt_count} days)"
+        # Create purchase record
+        purchase = StockPurchase(
+            product_id=product_id,
+            quantity=quantity,
+            unit_cost=unit_cost,
+            total_cost=total_cost,
+            supplier_name=supplier_name if supplier_name else None,
+            invoice_number=invoice_number if invoice_number else None,
+            purchase_date=purchase_date,
+            notes=notes if notes else None,
+            recorded_by=current_user.id
         )
 
-        db.session.commit()
-        flash(f'Daily summaries rebuilt successfully for {rebuilt_count} days!', 'success')
+        db.session.add(purchase)
+        db.session.flush()
 
-    except ValueError:
-        flash('Invalid date format!', 'error')
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Error rebuilding daily summaries: {str(e)}")
-        flash(f'Error rebuilding summaries: {str(e)}', 'error')
+        # Update product stock
+        product.add_stock(quantity)
 
-    return redirect(url_for('reports'))
+        # Update daily stock record
+        daily_stock = get_or_create_daily_stock(product_id, purchase_date)
 
+        # Recalculate total additions from all purchases
+        total_purchase_additions = db.session.query(
+            db.func.coalesce(db.func.sum(StockPurchase.quantity), 0)
+        ).filter(
+            StockPurchase.product_id == product_id,
+            StockPurchase.purchase_date == purchase_date
+        ).scalar() or 0
 
-# ADD ADDITIONAL UTILITY ROUTE FOR BULK SUMMARY GENERATION
+        # Update daily stock (additions already includes manual, we just recalculate closing)
+        daily_stock.calculate_closing_stock()
+        daily_stock.updated_by = current_user.id
+        daily_stock.updated_at = datetime.now(timezone.utc)
 
-@app.route('/generate_missing_summaries', methods=['POST'])
-@admin_required
-def generate_missing_summaries():
-    """Generate daily summaries for dates that have sales/expenses but no summary record"""
-    try:
-        # Find dates with sales but no daily summary
-        sales_dates = db.session.query(Sale.sale_date.distinct()).all()
-        expense_dates = db.session.query(Expense.expense_date.distinct()).all()
-
-        # Combine and deduplicate dates
-        all_dates = set()
-        for date_tuple in sales_dates:
-            all_dates.add(date_tuple[0])
-        for date_tuple in expense_dates:
-            all_dates.add(date_tuple[0])
-
-        # Check which dates don't have summaries
-        missing_dates = []
-        for target_date in all_dates:
-            existing_summary = DailySummary.query.filter_by(date=target_date).first()
-            if not existing_summary:
-                missing_dates.append(target_date)
-
-        # Generate summaries for missing dates
-        generated_count = 0
-        for target_date in missing_dates:
-            summary = update_daily_summary(target_date)
-            if summary:
-                generated_count += 1
+        # Create audit log
+        changes_summary = f"Stock purchase: {product.name} x{quantity} @ KES {unit_cost} = KES {total_cost}"
+        if supplier_name:
+            changes_summary += f" from {supplier_name}"
+        if invoice_number:
+            changes_summary += f" (Invoice: {invoice_number})"
 
         create_audit_log(
             action='CREATE',
-            table_name='daily_summary',
-            changes_summary=f"Generated {generated_count} missing daily summaries"
+            table_name='stock_purchase',
+            record_id=purchase.id,
+            new_values=purchase.to_dict(),
+            changes_summary=changes_summary
         )
 
         db.session.commit()
-        flash(f'Generated {generated_count} missing daily summaries!', 'success')
+
+        flash(
+            f'✅ Purchase recorded successfully! Added {quantity} {product.base_unit}s of {product.name} (KES {total_cost:,.2f})',
+            'success')
+
+        # Redirect back to daily_stock with the purchase date
+        return redirect(url_for('daily_stock', date=purchase_date_str))
 
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f"Error generating missing summaries: {str(e)}")
-        flash(f'Error generating summaries: {str(e)}', 'error')
+        app.logger.error(f"Error recording stock purchase: {str(e)}")
+        flash(f'Error recording stock purchase: {str(e)}', 'error')
+        return redirect(request.referrer or url_for('daily_stock'))
 
-    return redirect(url_for('reports'))
+
+@app.route('/stock_purchases')
+@admin_required
+def stock_purchases():
+    """View all stock purchases"""
+    selected_date_str = request.args.get('date', date.today().strftime('%Y-%m-%d'))
+    try:
+        selected_date = datetime.strptime(selected_date_str, '%Y-%m-%d').date()
+    except ValueError:
+        selected_date = date.today()
+
+    purchases = StockPurchase.query.filter_by(
+        purchase_date=selected_date
+    ).order_by(StockPurchase.timestamp.desc()).all()
+
+    products = Product.query.order_by(Product.name).all()
+
+    return render_template('stock/stock_purchases.html',
+                           purchases=purchases,
+                           selected_date=selected_date,
+                           products=products,
+                           today=date.today())
+
+
+@app.route('/edit_stock_purchase/<int:purchase_id>', methods=['GET', 'POST'])
+@admin_required
+def edit_stock_purchase(purchase_id):
+    """Edit a stock purchase"""
+    purchase = db.session.get(StockPurchase, purchase_id)
+    if not purchase:
+        flash('Stock purchase not found!', 'error')
+        return redirect(url_for('stock_purchases'))
+
+    if request.method == 'POST':
+        try:
+            old_values = purchase.to_dict()
+            old_quantity = purchase.quantity
+            old_date = purchase.purchase_date
+
+            # Update purchase fields
+            new_quantity = safe_float(request.form.get('quantity'))
+            purchase.unit_cost = safe_float(request.form.get('unit_cost'))
+            purchase.supplier_name = request.form.get('supplier_name', '').strip() or None
+            purchase.invoice_number = request.form.get('invoice_number', '').strip() or None
+            purchase.notes = request.form.get('notes', '').strip() or None
+
+            # Parse new date
+            new_date_str = request.form.get('purchase_date')
+            try:
+                new_date = datetime.strptime(new_date_str, '%Y-%m-%d').date()
+                purchase.purchase_date = new_date
+            except (ValueError, TypeError):
+                flash('Invalid purchase date format.', 'error')
+                products = Product.query.order_by(Product.name).all()
+                return render_template('stock/edit_stock_purchase.html', purchase=purchase, products=products)
+
+            # Recalculate total cost
+            purchase.total_cost = new_quantity * purchase.unit_cost
+
+            # Adjust product stock
+            quantity_diff = new_quantity - old_quantity
+            if quantity_diff != 0:
+                if quantity_diff > 0:
+                    purchase.product.add_stock(quantity_diff)
+                else:
+                    purchase.product.reduce_stock(abs(quantity_diff))
+
+            purchase.quantity = new_quantity
+
+            # Update daily stock for old date
+            if old_date == new_date:
+                daily_stock = get_or_create_daily_stock(purchase.product_id, old_date)
+                # Recalculate additions for this date
+                total_additions = db.session.query(
+                    db.func.coalesce(db.func.sum(StockPurchase.quantity), 0)
+                ).filter(
+                    StockPurchase.product_id == purchase.product_id,
+                    StockPurchase.purchase_date == old_date
+                ).scalar()
+                daily_stock.additions = total_additions
+                daily_stock.calculate_closing_stock()
+            else:
+                # Update both dates if date changed
+                for target_date in [old_date, new_date]:
+                    daily_stock = get_or_create_daily_stock(purchase.product_id, target_date)
+                    total_additions = db.session.query(
+                        db.func.coalesce(db.func.sum(StockPurchase.quantity), 0)
+                    ).filter(
+                        StockPurchase.product_id == purchase.product_id,
+                        StockPurchase.purchase_date == target_date
+                    ).scalar()
+                    daily_stock.additions = total_additions
+                    daily_stock.calculate_closing_stock()
+
+            new_values = purchase.to_dict()
+            changes_summary = get_changes_summary(old_values, new_values)
+
+            create_audit_log(
+                action='UPDATE',
+                table_name='stock_purchase',
+                record_id=purchase.id,
+                old_values=old_values,
+                new_values=new_values,
+                changes_summary=f"Stock purchase updated: {purchase.product.name} - {changes_summary}"
+            )
+
+            db.session.commit()
+            flash('Stock purchase updated successfully!', 'success')
+            return redirect(url_for('stock_purchases', date=purchase.purchase_date.strftime('%Y-%m-%d')))
+
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Error updating stock purchase: {str(e)}")
+            flash(f'Error updating stock purchase: {str(e)}', 'error')
+
+    products = Product.query.order_by(Product.name).all()
+    return render_template('stock/edit_stock_purchase.html', purchase=purchase, products=products)
+
+
+@app.route('/delete_stock_purchase/<int:purchase_id>', methods=['POST'])
+@admin_required
+def delete_stock_purchase(purchase_id):
+    """Delete a stock purchase"""
+    try:
+        purchase = db.session.get(StockPurchase, purchase_id)
+        if not purchase:
+            flash('Stock purchase not found!', 'error')
+            return redirect(url_for('stock_purchases'))
+
+        old_values = purchase.to_dict()
+        product_name = purchase.product.name if purchase.product else 'Unknown'
+        purchase_date = purchase.purchase_date
+        product_id = purchase.product_id
+        quantity = purchase.quantity
+
+        changes_summary = f"Stock purchase deleted: {product_name} x{quantity} = KES {purchase.total_cost}"
+
+        # Reduce product stock
+        purchase.product.reduce_stock(quantity)
+
+        # Create audit log before deletion
+        create_audit_log(
+            action='DELETE',
+            table_name='stock_purchase',
+            record_id=purchase_id,
+            old_values=old_values,
+            changes_summary=changes_summary
+        )
+
+        # Delete purchase
+        db.session.delete(purchase)
+
+        # Update daily stock
+        daily_stock = get_or_create_daily_stock(product_id, purchase_date)
+        total_additions = db.session.query(
+            db.func.coalesce(db.func.sum(StockPurchase.quantity), 0)
+        ).filter(
+            StockPurchase.product_id == product_id,
+            StockPurchase.purchase_date == purchase_date
+        ).scalar()
+        daily_stock.additions = total_additions
+        daily_stock.calculate_closing_stock()
+
+        db.session.commit()
+        flash(f'Stock purchase deleted successfully! {changes_summary}', 'success')
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting stock purchase: {str(e)}")
+        flash(f'Error deleting stock purchase: {str(e)}', 'error')
+
+    return redirect(url_for('stock_purchases'))
 
 
 # EXPENSES ROUTES
@@ -1671,8 +2406,6 @@ def expenses():
                            expense_categories=expense_categories,
                            current_user=current_user)
 
-
-# UPDATED EXPENSE ROUTES
 
 @app.route('/add_expense', methods=['POST'])
 @login_required
@@ -1764,7 +2497,7 @@ def edit_expense(expense_id):
                 flash('Please fill in all required fields with valid values!', 'error')
                 expense_categories = ExpenseCategory.query.filter_by(is_active=True).order_by(
                     ExpenseCategory.name).all()
-                return render_template('edit_expense.html', expense=expense, expense_categories=expense_categories)
+                return render_template('expenses/edit_expense.html', expense=expense, expense_categories=expense_categories)
 
             # Validate expense category
             expense_category = db.session.get(ExpenseCategory, expense.expense_category_id)
@@ -1772,7 +2505,7 @@ def edit_expense(expense_id):
                 flash('Invalid expense category selected!', 'error')
                 expense_categories = ExpenseCategory.query.filter_by(is_active=True).order_by(
                     ExpenseCategory.name).all()
-                return render_template('edit_expense.html', expense=expense, expense_categories=expense_categories)
+                return render_template('expenses/edit_expense.html', expense=expense, expense_categories=expense_categories)
 
             new_values = expense.to_dict()
 
@@ -1805,7 +2538,7 @@ def edit_expense(expense_id):
             flash(f'Error updating expense: {str(e)}', 'error')
 
     expense_categories = ExpenseCategory.query.filter_by(is_active=True).order_by(ExpenseCategory.name).all()
-    return render_template('edit_expense.html', expense=expense, expense_categories=expense_categories)
+    return render_template('expenses/edit_expense.html', expense=expense, expense_categories=expense_categories)
 
 
 @app.route('/delete_expense/<int:expense_id>', methods=['POST'])
@@ -1850,127 +2583,6 @@ def delete_expense(expense_id):
         flash(f'Error deleting expense: {str(e)}', 'error')
 
     return redirect(url_for('expenses'))
-
-
-# Add these routes to your Flask app after the existing expense category routes
-
-@app.route('/edit_expense_category/<int:category_id>', methods=['GET', 'POST'])
-@admin_required
-def edit_expense_category(category_id):
-    category = db.session.get(ExpenseCategory, category_id)
-    if not category:
-        flash('Expense category not found!', 'error')
-        return redirect(url_for('expense_categories'))
-
-    if request.method == 'POST':
-        old_values = category.to_dict()
-
-        name = request.form['name'].strip()
-        description = request.form.get('description', '').strip()
-
-        if not name:
-            flash('Expense category name is required!', 'error')
-            return render_template('expenses/edit_expense_category.html', category=category)
-
-        # Check for duplicate names (excluding current category)
-        existing_category = ExpenseCategory.query.filter(
-            ExpenseCategory.name == name,
-            ExpenseCategory.id != category_id
-        ).first()
-
-        if existing_category:
-            flash('An expense category with this name already exists!', 'error')
-            return render_template('expenses/edit_expense_category.html', category=category)
-
-        category.name = name
-        category.description = description if description else None
-
-        new_values = category.to_dict()
-        changes_summary = get_changes_summary(old_values, new_values)
-
-        create_audit_log(
-            action='UPDATE',
-            table_name='expense_category',
-            record_id=category.id,
-            old_values=old_values,
-            new_values=new_values,
-            changes_summary=f"Expense category updated: {name} - {changes_summary}"
-        )
-
-        db.session.commit()
-        flash(f'Expense category "{name}" updated successfully!', 'success')
-        return redirect(url_for('expense_categories'))
-
-    return render_template('expenses/edit_expense_category.html', category=category)
-
-
-@app.route('/toggle_expense_category_status/<int:category_id>', methods=['POST'])
-@admin_required
-def toggle_expense_category_status(category_id):
-    category = db.session.get(ExpenseCategory, category_id)
-    if not category:
-        flash('Expense category not found!', 'error')
-        return redirect(url_for('expense_categories'))
-
-    old_values = category.to_dict()
-    category.is_active = not category.is_active
-    new_values = category.to_dict()
-
-    status = "activated" if category.is_active else "deactivated"
-
-    create_audit_log(
-        action='UPDATE',
-        table_name='expense_category',
-        record_id=category.id,
-        old_values=old_values,
-        new_values=new_values,
-        changes_summary=f"Expense category {category.name} has been {status}"
-    )
-
-    db.session.commit()
-    flash(f'Expense category "{category.name}" has been {status}', 'success')
-    return redirect(url_for('expense_categories'))
-
-
-@app.route('/delete_expense_category/<int:category_id>', methods=['POST'])
-@admin_required
-def delete_expense_category(category_id):
-    try:
-        category = db.session.get(ExpenseCategory, category_id)
-        if not category:
-            flash('Expense category not found!', 'error')
-            return redirect(url_for('expense_categories'))
-
-        # Check if category is being used by any expenses
-        expense_count = Expense.query.filter_by(expense_category_id=category_id).count()
-        if expense_count > 0:
-            flash(
-                f'Cannot delete category "{category.name}" because it is used by {expense_count} expense(s). Please reassign those expenses first or deactivate the category instead.',
-                'error')
-            return redirect(url_for('expense_categories'))
-
-        old_values = category.to_dict()
-        category_name = category.name
-
-        create_audit_log(
-            action='DELETE',
-            table_name='expense_category',
-            record_id=category_id,
-            old_values=old_values,
-            changes_summary=f"Expense category deleted: {category_name}"
-        )
-
-        db.session.delete(category)
-        db.session.commit()
-
-        flash(f'Expense category "{category_name}" deleted successfully!', 'success')
-
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Error deleting expense category: {str(e)}")
-        flash(f'Error deleting expense category: {str(e)}', 'error')
-
-    return redirect(url_for('expense_categories'))
 
 
 # REPORTS ROUTES
@@ -2328,7 +2940,7 @@ def forbidden(error):
             db.session.commit()
         except Exception:
             db.session.rollback()
-    return render_template('403.html'), 403
+    return render_template('errors/403.html'), 403
 
 
 @app.errorhandler(500)
@@ -2345,7 +2957,7 @@ def internal_error(error):
             db.session.commit()
         except Exception:
             pass
-    return render_template('500.html'), 500
+    return render_template('errors/500.html'), 500
 
 
 # TEMPLATE GLOBALS
@@ -2414,8 +3026,7 @@ app.jinja_env.globals.update({
 })
 
 
-# UPDATED DATABASE INITIALIZATION (add to the initialize_database function)
-
+# DATABASE INITIALIZATION
 def initialize_database():
     try:
         with app.app_context():
@@ -2496,357 +3107,6 @@ def create_app(config=None):
 
     return app
 
-
-# Fixed search route that works with your database models
-@app.route('/search')
-@login_required
-def search():
-    """Simple search route that works with your models"""
-    query = request.args.get('q', '').strip()
-    search_type = request.args.get('type', 'all')
-
-    print(f"Search Debug: Query='{query}', Type='{search_type}'")
-
-    # If no query, show empty search page
-    if not query:
-        return render_template('search_results.html', search_data=None)
-
-    try:
-        # Get current user
-        current_user = session.get('user_id')  # Adjust this to how you get current user
-        if current_user:
-            current_user = User.query.get(current_user)
-
-        if not current_user:
-            flash('Please log in to search', 'error')
-            return redirect(url_for('login'))
-
-        print(f"Search Debug: Current user = {current_user.username}")
-
-        results = {'products': [], 'sales': [], 'expenses': [], 'customers': [], 'users': []}
-        total_results = 0
-
-        # Test database connection with correct SQLAlchemy syntax
-        try:
-            db.session.execute(db.text('SELECT 1')).fetchone()
-            print("Search Debug: Database connection OK")
-        except Exception as e:
-            print(f"Search Debug: Database connection error: {e}")
-            flash(f'Database connection error: {str(e)}', 'error')
-            return render_template('search_results.html', search_data=None)
-
-        # Search Products
-        if search_type in ['all', 'products']:
-            try:
-                print("Search Debug: Searching products...")
-
-                # Simple product search using your models
-                products = db.session.query(Product, Category).join(Category).filter(
-                    Product.name.ilike(f'%{query}%')
-                ).limit(10).all()
-
-                print(f"Search Debug: Found {len(products)} matching products")
-
-                for product, category in products:
-                    try:
-                        # Get variants for this product
-                        variants = ProductVariant.query.filter_by(
-                            product_id=product.id,
-                            is_active=True
-                        ).join(Size).all()
-
-                        variant_list = []
-                        for variant in variants:
-                            variant_list.append({
-                                'id': variant.id,
-                                'display_name': variant.get_display_name(),
-                                'price': variant.selling_price,
-                                'available': variant.get_available_stock_in_variant_units()
-                            })
-
-                        results['products'].append({
-                            'id': product.id,
-                            'name': product.name,
-                            'category': category.name,
-                            'current_stock': product.get_available_stock(),
-                            'stock_status': product.get_stock_status(),
-                            'base_unit': product.base_unit,
-                            'url': url_for('products'),
-                            'variants': variant_list
-                        })
-                        total_results += 1
-
-                    except Exception as e:
-                        print(f"Search Debug: Error processing product {product.id}: {e}")
-                        continue
-
-                print(f"Search Debug: Successfully processed {len(results['products'])} products")
-
-            except Exception as e:
-                print(f"Search Debug: Product search error: {e}")
-
-        # Search Sales (only if user has permission)
-        if search_type in ['all', 'sales']:
-            try:
-                print("Search Debug: Searching sales...")
-
-                sales_query = db.session.query(Sale, ProductVariant, Product).join(
-                    ProductVariant
-                ).join(Product).filter(
-                    db.or_(
-                        Product.name.ilike(f'%{query}%'),
-                        Sale.customer_name.ilike(f'%{query}%')
-                    )
-                ).order_by(Sale.timestamp.desc())
-
-                # Filter for attendants (only their sales)
-                if current_user.role not in ['admin', 'manager']:
-                    sales_query = sales_query.filter(Sale.attendant_id == current_user.id)
-
-                sales = sales_query.limit(10).all()
-
-                for sale, variant, product in sales:
-                    results['sales'].append({
-                        'id': sale.id,
-                        'product_name': variant.get_display_name(),
-                        'quantity': sale.quantity,
-                        'total_amount': sale.total_amount,
-                        'customer_name': sale.customer_name or 'Walk-in Customer',
-                        'attendant': current_user.full_name if current_user.role not in ['admin',
-                                                                                         'manager'] else sale.attendant.full_name,
-                        'date': sale.sale_date.strftime('%Y-%m-%d'),
-                        'url': url_for('sales', date=sale.sale_date.strftime('%Y-%m-%d'))
-                    })
-                    total_results += 1
-
-                print(f"Search Debug: Found {len(results['sales'])} sales")
-
-            except Exception as e:
-                print(f"Search Debug: Sales search error: {e}")
-
-        # Search Expenses
-        if search_type in ['all', 'expenses']:
-            try:
-                print("Search Debug: Searching expenses...")
-
-                expenses_query = db.session.query(Expense, User, ExpenseCategory).join(
-                    User, Expense.recorded_by == User.id
-                ).join(ExpenseCategory).filter(
-                    db.or_(
-                        Expense.description.ilike(f'%{query}%'),
-                        ExpenseCategory.name.ilike(f'%{query}%')
-                    )
-                ).order_by(Expense.timestamp.desc())
-
-                # Filter for attendants
-                if current_user.role not in ['admin', 'manager']:
-                    expenses_query = expenses_query.filter(Expense.recorded_by == current_user.id)
-
-                expenses = expenses_query.limit(10).all()
-
-                for expense, user, category in expenses:
-                    results['expenses'].append({
-                        'id': expense.id,
-                        'description': expense.description,
-                        'amount': expense.amount,
-                        'category': category.name,
-                        'recorded_by': user.full_name,
-                        'date': expense.expense_date.strftime('%Y-%m-%d'),
-                        'url': url_for('expenses', date=expense.expense_date.strftime('%Y-%m-%d'))
-                    })
-                    total_results += 1
-
-                print(f"Search Debug: Found {len(results['expenses'])} expenses")
-
-            except Exception as e:
-                print(f"Search Debug: Expenses search error: {e}")
-
-        print(f"Search Debug: Total results = {total_results}")
-
-        # Create audit log (with error handling)
-        try:
-            audit_log = AuditLog(
-                user_id=current_user.id,
-                action='SEARCH',
-                table_name='system',
-                changes_summary=f"Search performed: '{query}' (type: {search_type}, results: {total_results})"
-            )
-            db.session.add(audit_log)
-            db.session.commit()
-            print("Search Debug: Audit log created successfully")
-        except Exception as e:
-            print(f"Search Debug: Audit log error: {e}")
-            # Don't fail the search if audit logging fails
-            db.session.rollback()
-
-        # Prepare search data for template
-        search_data = {
-            'results': results,
-            'total': total_results,
-            'query': query,
-            'search_type': search_type,
-            'message': f'Found {total_results} results for "{query}"' if total_results > 0 else f'No results found for "{query}"'
-        }
-
-        print("Search Debug: Rendering template...")
-        return render_template('search_results.html', search_data=search_data)
-
-    except Exception as e:
-        error_msg = str(e)
-        print(f"Search Debug: Main exception: {error_msg}")
-
-        import traceback
-        print("Search Debug: Full traceback:")
-        print(traceback.format_exc())
-
-        flash(f'Search error: {error_msg}', 'error')
-        return render_template('search_results.html', search_data=None)
-
-
-# Simple search suggestions route
-@app.route('/search/suggestions')
-@login_required
-def search_suggestions():
-    """Simple search suggestions"""
-    query = request.args.get('q', '').strip()
-    limit = min(request.args.get('limit', 5, type=int), 10)
-
-    if len(query) < 2:
-        return jsonify({'suggestions': []})
-
-    suggestions = []
-
-    try:
-        # Product suggestions
-        products = Product.query.join(Category).filter(
-            Product.name.ilike(f'%{query}%')
-        ).limit(limit).all()
-
-        for product in products:
-            suggestions.append({
-                'text': product.name,
-                'type': 'product',
-                'category': product.category.name,
-                'icon': 'fas fa-box'
-            })
-
-        # Category suggestions if we need more
-        if len(suggestions) < limit:
-            categories = Category.query.filter(
-                Category.name.ilike(f'%{query}%'),
-                Category.is_active == True
-            ).limit(limit - len(suggestions)).all()
-
-            for category in categories:
-                suggestions.append({
-                    'text': category.name,
-                    'type': 'category',
-                    'icon': 'fas fa-layer-group'
-                })
-
-        return jsonify({'suggestions': suggestions})
-
-    except Exception as e:
-        print(f"Search suggestions error: {str(e)}")
-        return jsonify({'suggestions': []})
-
-
-# Test route to verify template works
-@app.route('/search/test')
-@login_required
-def search_test():
-    """Test search template"""
-    search_data = {
-        'results': {
-            'products': [{
-                'id': 1,
-                'name': 'Test Product',
-                'category': 'Test Category',
-                'current_stock': 10,
-                'stock_status': 'good_stock',
-                'base_unit': 'bottles',
-                'url': '/products',
-                'variants': [{
-                    'id': 1,
-                    'display_name': 'Test Product - 750ml',
-                    'price': 100.00,
-                    'available': 10
-                }]
-            }],
-            'sales': [],
-            'expenses': [],
-            'customers': [],
-            'users': []
-        },
-        'total': 1,
-        'query': 'test',
-        'search_type': 'all',
-        'message': 'Test search results'
-    }
-
-    return render_template('search_results.html', search_data=search_data)
-
-
-
-@app.route('/quick_search')
-@login_required
-def quick_search():
-    """Quick search for point of sale - returns products/variants only"""
-    query = request.args.get('q', '').strip()
-
-    if len(query) < 2:
-        return jsonify({'results': []})
-
-    try:
-        # Simple product search for POS
-        products = Product.query.filter(
-            Product.name.ilike(f'%{query}%'),
-            Product.current_stock > 0
-        ).limit(20).all()
-
-        formatted_results = []
-        for product in products:
-            # Get variants if they exist
-            try:
-                variants = ProductVariant.query.filter(
-                    ProductVariant.product_id == product.id,
-                    ProductVariant.is_active == True
-                ).all()
-
-                if variants:
-                    for variant in variants:
-                        if variant.get_available_stock_in_variant_units() > 0:
-                            formatted_results.append({
-                                'variant_id': variant.id,
-                                'product_name': product.name,
-                                'variant_display': variant.get_display_name(),
-                                'price': variant.selling_price,
-                                'available_qty': variant.get_available_stock_in_variant_units(),
-                            })
-                else:
-                    # Product without variants
-                    formatted_results.append({
-                        'variant_id': None,
-                        'product_name': product.name,
-                        'variant_display': product.name,
-                        'price': getattr(product, 'selling_price', 0),
-                        'available_qty': product.current_stock,
-                    })
-            except:
-                # Fallback if variant methods don't exist
-                formatted_results.append({
-                    'variant_id': None,
-                    'product_name': product.name,
-                    'variant_display': product.name,
-                    'price': getattr(product, 'selling_price', 0),
-                    'available_qty': product.current_stock,
-                })
-
-        return jsonify({'results': formatted_results})
-
-    except Exception as e:
-        app.logger.error(f"Quick search error: {str(e)}")
-        return jsonify({'results': [], 'error': 'Search failed'})
 
 if __name__ == '__main__':
     initialize_database()

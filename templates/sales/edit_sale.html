@@ -1,278 +1,81 @@
+<!-- ================================ -->
+<!-- sales/edit_sale.html -->
+<!-- ================================ -->
+
 {% extends "base.html" %}
 
-{% block title %}Edit Sale - Liquor Store Management{% endblock %}
-
+{% block title %}Edit Sale - LiquorPro{% endblock %}
 {% block page_title %}Edit Sale{% endblock %}
+{% block breadcrumb %}Sales / Edit{% endblock %}
 
 {% block content %}
-<div class="row">
+<div class="row justify-content-center">
     <div class="col-lg-8">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">
-                    <i class="fas fa-edit me-2"></i>Edit Sale #{{ sale.id }}
-                </h5>
-                <a href="{{ url_for('sales', date=sale.sale_date.strftime('%Y-%m-%d')) }}" class="btn btn-outline-secondary btn-sm">
-                    <i class="fas fa-arrow-left me-1"></i>Back to Sales
-                </a>
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h6 class="mb-0"><i class="fas fa-edit me-2"></i>Edit Sale</h6>
             </div>
             <div class="card-body">
-                <form method="POST" id="editSaleForm">
-                    <!-- Product Information (Read-only) -->
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Product</label>
-                            <input type="text" class="form-control" value="{{ sale.variant.product.name }}" readonly>
+                <form method="POST" action="{{ url_for('edit_sale', sale_id=sale.id) }}">
+                    <div class="alert alert-info">
+                        <strong>Original Sale:</strong><br>
+                        Product: {{ sale.variant.get_display_name() }}<br>
+                        Date: {{ sale.sale_date.strftime('%Y-%m-%d') }}<br>
+                        Time: {{ sale.timestamp.strftime('%I:%M %p') }}
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Quantity *</label>
+                            <input type="number" class="form-control" name="quantity" step="1" min="1" value="{{ sale.quantity }}" required>
                         </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Size</label>
-                            <input type="text" class="form-control" value="{{ sale.variant.size.name }}" readonly>
+                        <div class="col-md-4">
+                            <label class="form-label">Unit Price *</label>
+                            <input type="number" class="form-control" name="unit_price" step="0.01" min="0" value="{{ sale.unit_price }}" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Sale Date *</label>
+                            <input type="date" class="form-control" name="sale_date" value="{{ sale.sale_date.strftime('%Y-%m-%d') }}" required>
                         </div>
                     </div>
 
-                    <!-- Sale Details -->
-                    <div class="row mb-3">
+                    <div class="row g-3 mt-2">
                         <div class="col-md-4">
-                            <label for="quantity" class="form-label">Quantity <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control" id="quantity" name="quantity" 
-                                   value="{{ sale.quantity }}" min="0.1" step="0.1" required>
-                            <div class="form-text">
-                                Available: {{ sale.variant.get_available_stock_in_variant_units() + sale.quantity }} units
-                            </div>
+                            <label class="form-label">Cash Amount</label>
+                            <input type="number" class="form-control" name="cash_amount" step="0.01" min="0" value="{{ sale.cash_amount }}">
                         </div>
                         <div class="col-md-4">
-                            <label for="unit_price" class="form-label">Unit Price (KES) <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control" id="unit_price" name="unit_price" 
-                                   value="{{ sale.unit_price }}" min="0.01" step="0.01" required>
+                            <label class="form-label">M-Pesa Amount</label>
+                            <input type="number" class="form-control" name="mpesa_amount" step="0.01" min="0" value="{{ sale.mpesa_amount }}">
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">Total Amount</label>
-                            <input type="text" class="form-control" id="total_display" readonly>
+                            <label class="form-label">Credit Amount</label>
+                            <input type="number" class="form-control" name="credit_amount" step="0.01" min="0" value="{{ sale.credit_amount }}">
                         </div>
                     </div>
 
-                    <!-- Payment Information -->
-                    <h6 class="mb-3">
-                        <i class="fas fa-credit-card me-2"></i>Payment Information
-                    </h6>
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <label for="cash_amount" class="form-label">Cash Amount (KES)</label>
-                            <input type="number" class="form-control" id="cash_amount" name="cash_amount" 
-                                   value="{{ sale.cash_amount }}" min="0" step="0.01">
-                        </div>
-                        <div class="col-md-4">
-                            <label for="mpesa_amount" class="form-label">M-Pesa Amount (KES)</label>
-                            <input type="number" class="form-control" id="mpesa_amount" name="mpesa_amount" 
-                                   value="{{ sale.mpesa_amount }}" min="0" step="0.01">
-                        </div>
-                        <div class="col-md-4">
-                            <label for="credit_amount" class="form-label">Credit Amount (KES)</label>
-                            <input type="number" class="form-control" id="credit_amount" name="credit_amount" 
-                                   value="{{ sale.credit_amount }}" min="0" step="0.01">
-                        </div>
-                    </div>
-
-                    <!-- Customer Information -->
-                    <div class="row mb-3">
+                    <div class="row g-3 mt-2">
                         <div class="col-md-6">
-                            <label for="customer_name" class="form-label">Customer Name</label>
-                            <input type="text" class="form-control" id="customer_name" name="customer_name" 
-                                   value="{{ sale.customer_name or '' }}" maxlength="100"
-                                   placeholder="Required for credit sales">
+                            <label class="form-label">Customer Name</label>
+                            <input type="text" class="form-control" name="customer_name" value="{{ sale.customer_name or '' }}">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">Payment Summary</label>
-                            <div class="border rounded p-2 bg-light">
-                                <div id="payment_summary">
-                                    <div>Total: <span id="payment_total">KES 0</span></div>
-                                    <div>Required: <span id="payment_required">KES 0</span></div>
-                                    <div id="payment_status" class="fw-bold"></div>
-                                </div>
-                            </div>
+                            <label class="form-label">Notes</label>
+                            <textarea class="form-control" name="notes" rows="2">{{ sale.notes or '' }}</textarea>
                         </div>
                     </div>
 
-                    <!-- Notes -->
-                    <div class="mb-3">
-                        <label for="notes" class="form-label">Notes</label>
-                        <textarea class="form-control" id="notes" name="notes" rows="2" 
-                                  placeholder="Optional notes about this sale">{{ sale.notes or '' }}</textarea>
-                    </div>
-
-                    <!-- Action Buttons -->
-                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                        <a href="{{ url_for('sales', date=sale.sale_date.strftime('%Y-%m-%d')) }}" class="btn btn-secondary">
-                            <i class="fas fa-times me-1"></i>Cancel
-                        </a>
-                        <button type="submit" class="btn btn-success">
-                            <i class="fas fa-save me-1"></i>Update Sale
+                    <div class="mt-3">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>Update Sale
                         </button>
+                        <a href="{{ url_for('sales', date=sale.sale_date.strftime('%Y-%m-%d')) }}" class="btn btn-secondary">
+                            <i class="fas fa-times me-2"></i>Cancel
+                        </a>
                     </div>
                 </form>
             </div>
         </div>
     </div>
-
-    <div class="col-lg-4">
-        <!-- Original Sale Information -->
-        <div class="card">
-            <div class="card-header">
-                <h6 class="mb-0">
-                    <i class="fas fa-info-circle me-2"></i>Original Sale Information
-                </h6>
-            </div>
-            <div class="card-body">
-                <table class="table table-sm">
-                    <tr>
-                        <td><strong>Sale Date:</strong></td>
-                        <td>{{ sale.sale_date.strftime('%d %b %Y') }}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Attendant:</strong></td>
-                        <td>{{ sale.attendant.full_name }}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Original Amount:</strong></td>
-                        <td>{{ format_currency(sale.original_amount) }}</td>
-                    </tr>
-                    {% if sale.discount_amount > 0 %}
-                    <tr>
-                        <td><strong>Discount:</strong></td>
-                        <td class="text-danger">-{{ format_currency(sale.discount_amount) }}</td>
-                    </tr>
-                    {% if sale.discount_reason %}
-                    <tr>
-                        <td><strong>Discount Reason:</strong></td>
-                        <td><small>{{ sale.discount_reason }}</small></td>
-                    </tr>
-                    {% endif %}
-                    {% endif %}
-                    <tr class="table-primary">
-                        <td><strong>Final Amount:</strong></td>
-                        <td><strong>{{ format_currency(sale.total_amount) }}</strong></td>
-                    </tr>
-                    <tr>
-                        <td><strong>Payment Method:</strong></td>
-                        <td>
-                            <span class="badge bg-{{ 'primary' if sale.payment_method == 'cash' else 'success' if sale.payment_method == 'mpesa' else 'warning' if sale.payment_method == 'credit' else 'info' }}">
-                                {{ sale.payment_method.title() }}
-                            </span>
-                        </td>
-                    </tr>
-                    {% if current_user.role in ['admin', 'manager'] %}
-                    <tr>
-                        <td><strong>Profit:</strong></td>
-                        <td class="text-success">{{ format_currency(sale.get_profit()) }}</td>
-                    </tr>
-                    {% endif %}
-                </table>
-            </div>
-        </div>
-
-        <!-- Warning Card -->
-        <div class="card mt-3 border-warning">
-            <div class="card-header bg-warning text-dark">
-                <h6 class="mb-0">
-                    <i class="fas fa-exclamation-triangle me-2"></i>Important Notes
-                </h6>
-            </div>
-            <div class="card-body">
-                <ul class="mb-0">
-                    <li><strong>Stock Impact:</strong> Changing quantity will adjust product stock levels</li>
-                    <li><strong>Payment Validation:</strong> Total payment must cover the sale amount</li>
-                    <li><strong>Credit Sales:</strong> Customer name is required for any credit amount</li>
-                    <li><strong>Audit Trail:</strong> All changes are logged for accountability</li>
-                </ul>
-            </div>
-        </div>
-    </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-function calculateTotal() {
-    const quantity = parseFloat(document.getElementById('quantity').value) || 0;
-    const unitPrice = parseFloat(document.getElementById('unit_price').value) || 0;
-    const total = quantity * unitPrice;
-    
-    document.getElementById('total_display').value = 'KES ' + total.toLocaleString('en-KE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    
-    updatePaymentSummary(total);
-    return total;
-}
-
-function updatePaymentSummary(requiredAmount = null) {
-    if (requiredAmount === null) {
-        requiredAmount = calculateTotal();
-    }
-    
-    const cashAmount = parseFloat(document.getElementById('cash_amount').value) || 0;
-    const mpesaAmount = parseFloat(document.getElementById('mpesa_amount').value) || 0;
-    const creditAmount = parseFloat(document.getElementById('credit_amount').value) || 0;
-    
-    const totalPayment = cashAmount + mpesaAmount + creditAmount;
-    const difference = totalPayment - requiredAmount;
-    
-    document.getElementById('payment_total').textContent = 'KES ' + totalPayment.toLocaleString('en-KE', {minimumFractionDigits: 2});
-    document.getElementById('payment_required').textContent = 'KES ' + requiredAmount.toLocaleString('en-KE', {minimumFractionDigits: 2});
-    
-    const statusElement = document.getElementById('payment_status');
-    if (difference > 0) {
-        statusElement.textContent = 'Change: KES ' + difference.toLocaleString('en-KE', {minimumFractionDigits: 2});
-        statusElement.className = 'fw-bold text-info';
-    } else if (difference < 0) {
-        statusElement.textContent = 'Shortfall: KES ' + Math.abs(difference).toLocaleString('en-KE', {minimumFractionDigits: 2});
-        statusElement.className = 'fw-bold text-danger';
-    } else {
-        statusElement.textContent = 'Payment Complete';
-        statusElement.className = 'fw-bold text-success';
-    }
-}
-
-// Event listeners
-document.getElementById('quantity').addEventListener('input', calculateTotal);
-document.getElementById('unit_price').addEventListener('input', calculateTotal);
-document.getElementById('cash_amount').addEventListener('input', updatePaymentSummary);
-document.getElementById('mpesa_amount').addEventListener('input', updatePaymentSummary);
-document.getElementById('credit_amount').addEventListener('input', updatePaymentSummary);
-
-// Form validation
-document.getElementById('editSaleForm').addEventListener('submit', function(e) {
-    const quantity = parseFloat(document.getElementById('quantity').value) || 0;
-    const unitPrice = parseFloat(document.getElementById('unit_price').value) || 0;
-    const creditAmount = parseFloat(document.getElementById('credit_amount').value) || 0;
-    const customerName = document.getElementById('customer_name').value.trim();
-    
-    if (quantity <= 0 || unitPrice <= 0) {
-        e.preventDefault();
-        alert('Please enter valid quantity and unit price.');
-        return false;
-    }
-    
-    if (creditAmount > 0 && !customerName) {
-        e.preventDefault();
-        alert('Customer name is required for credit sales.');
-        document.getElementById('customer_name').focus();
-        return false;
-    }
-    
-    const total = calculateTotal();
-    const totalPayment = (parseFloat(document.getElementById('cash_amount').value) || 0) +
-                        (parseFloat(document.getElementById('mpesa_amount').value) || 0) +
-                        (parseFloat(document.getElementById('credit_amount').value) || 0);
-    
-    if (totalPayment < total) {
-        e.preventDefault();
-        alert('Payment amount is insufficient. Please adjust payment amounts.');
-        return false;
-    }
-});
-
-// Initialize calculations
-document.addEventListener('DOMContentLoaded', function() {
-    calculateTotal();
-});
-</script>
 {% endblock %}

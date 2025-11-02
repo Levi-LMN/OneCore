@@ -468,6 +468,50 @@ class DailySummary(db.Model):
         return f'<DailySummary {self.date}>'
 
 
+# Add this new model to your models.py file
+
+class StockPurchase(db.Model):
+    """Track stock purchases/additions with costs"""
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False, index=True)
+    quantity = db.Column(db.Float, nullable=False)  # Quantity in base units
+    unit_cost = db.Column(db.Float, nullable=False)  # Cost per base unit
+    total_cost = db.Column(db.Float, nullable=False)  # Total amount spent
+    supplier_name = db.Column(db.String(100), nullable=True)
+    invoice_number = db.Column(db.String(50), nullable=True)
+    purchase_date = db.Column(db.Date, nullable=False, index=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    notes = db.Column(db.Text, nullable=True)
+    recorded_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    product = db.relationship('Product', backref=db.backref('purchases', lazy=True))
+    recorder = db.relationship('User', backref=db.backref('recorded_purchases', lazy=True))
+
+    __table_args__ = (
+        db.Index('idx_purchase_date_product', 'purchase_date', 'product_id'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'product_id': self.product_id,
+            'product_name': self.product.name if self.product else None,
+            'quantity': self.quantity,
+            'unit_cost': self.unit_cost,
+            'total_cost': self.total_cost,
+            'supplier_name': self.supplier_name,
+            'invoice_number': self.invoice_number,
+            'purchase_date': self.purchase_date.isoformat() if self.purchase_date else None,
+            'timestamp': self.timestamp.isoformat() if self.timestamp else None,
+            'notes': self.notes,
+            'recorded_by': self.recorded_by,
+            'recorder_name': self.recorder.full_name if self.recorder else None
+        }
+
+    def __repr__(self):
+        return f'<StockPurchase {self.product.name if self.product else "Unknown"} x{self.quantity}>'
+
+
 class AuditLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)

@@ -1,19 +1,19 @@
 <!-- ================================ -->
-<!-- expenses/edit_expense_category.html - NEW -->
+<!-- categories/edit_category.html - NEW -->
 <!-- ================================ -->
 
 {% extends "base.html" %}
 
-{% block title %}Edit Expense Category - LiquorPro{% endblock %}
-{% block page_title %}Edit Expense Category{% endblock %}
-{% block breadcrumb %}Financial / Expense Categories / Edit{% endblock %}
+{% block title %}Edit Category - LiquorPro{% endblock %}
+{% block page_title %}Edit Category{% endblock %}
+{% block breadcrumb %}Inventory / Categories / Edit{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-6">
         <div class="card shadow-sm">
             <div class="card-body">
-                <form method="POST" action="{{ url_for('edit_expense_category', category_id=category.id) }}">
+                <form method="POST" action="{{ url_for('edit_category', category_id=category.id) }}">
                     <div class="mb-3">
                         <label for="name" class="form-label">Category Name *</label>
                         <input type="text" class="form-control" id="name" name="name" value="{{ category.name }}" required>
@@ -24,11 +24,15 @@
                         <textarea class="form-control" id="description" name="description" rows="3">{{ category.description or '' }}</textarea>
                     </div>
 
+                    <div class="alert alert-info">
+                        <strong>Note:</strong> This category has {{ category.products|length if category.products else 0 }} product(s) associated with it.
+                    </div>
+
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-save me-2"></i>Update Category
                         </button>
-                        <a href="{{ url_for('expense_categories') }}" class="btn btn-secondary">
+                        <a href="{{ url_for('categories') }}" class="btn btn-secondary">
                             <i class="fas fa-times me-2"></i>Cancel
                         </a>
                     </div>

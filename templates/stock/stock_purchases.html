@@ -1,0 +1,91 @@
+<!-- ================================ -->
+<!-- stock/stock_purchases.html -->
+<!-- ================================ -->
+
+{% extends "base.html" %}
+
+{% block title %}Stock Purchases - LiquorPro{% endblock %}
+{% block page_title %}Stock Purchases{% endblock %}
+{% block breadcrumb %}Stock / Purchases{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <h5>Stock Purchases</h5>
+                <small class="text-muted">Date: {{ selected_date.strftime('%A, %B %d, %Y') }}</small>
+            </div>
+            <form method="GET" action="{{ url_for('stock_purchases') }}" class="d-flex gap-2">
+                <input type="date" class="form-control form-control-sm" name="date"
+                       value="{{ selected_date.strftime('%Y-%m-%d') }}"
+                       max="{{ today.strftime('%Y-%m-%d') }}">
+                <button type="submit" class="btn btn-sm btn-primary">
+                    <i class="fas fa-filter"></i> Filter
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Product</th>
+                        <th>Quantity</th>
+                        <th>Unit Cost</th>
+                        <th>Total Cost</th>
+                        <th>Supplier</th>
+                        <th>Invoice #</th>
+                        <th>Notes</th>
+                        <th>Recorded By</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for purchase in purchases %}
+                    <tr>
+                        <td>{{ purchase.timestamp.strftime('%I:%M %p') }}</td>
+                        <td><strong>{{ purchase.product.name }}</strong></td>
+                        <td>{{ purchase.quantity }} {{ purchase.product.base_unit }}s</td>
+                        <td>{{ format_currency(purchase.unit_cost) }}</td>
+                        <td><strong>{{ format_currency(purchase.total_cost) }}</strong></td>
+                        <td>{{ purchase.supplier_name or '-' }}</td>
+                        <td>{{ purchase.invoice_number or '-' }}</td>
+                        <td>
+                            {% if purchase.notes %}
+                            <small>{{ purchase.notes[:50] }}...</small>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td>{{ purchase.recorder.full_name }}</td>
+                        <td>
+                            <a href="{{ url_for('edit_stock_purchase', purchase_id=purchase.id) }}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                            <form method="POST" action="{{ url_for('delete_stock_purchase', purchase_id=purchase.id) }}" style="display: inline;">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this purchase?')">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if not purchases %}
+<div class="alert alert-info mt-3">
+    <i class="fas fa-info-circle me-2"></i>No purchases recorded for this date.
+</div>
+{% endif %}
+{% endblock %}
+

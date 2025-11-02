@@ -1,22 +1,22 @@
 <!-- ================================ -->
-<!-- products/add_product.html -->
+<!-- products/edit_product.html - NEW -->
 <!-- ================================ -->
 
 {% extends "base.html" %}
 
-{% block title %}Add Product - LiquorPro{% endblock %}
-{% block page_title %}Add Product{% endblock %}
-{% block breadcrumb %}Inventory / Products / Add{% endblock %}
+{% block title %}Edit Product - LiquorPro{% endblock %}
+{% block page_title %}Edit Product{% endblock %}
+{% block breadcrumb %}Inventory / Products / Edit{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-8">
         <div class="card shadow-sm">
             <div class="card-body">
-                <form method="POST" action="{{ url_for('add_product') }}">
+                <form method="POST" action="{{ url_for('edit_product', product_id=product.id) }}">
                     <div class="mb-3">
                         <label for="name" class="form-label">Product Name *</label>
-                        <input type="text" class="form-control" id="name" name="name" placeholder="e.g., Jameson Whiskey" required>
+                        <input type="text" class="form-control" id="name" name="name" value="{{ product.name }}" required>
                     </div>
 
                     <div class="row">
@@ -25,42 +25,40 @@
                             <select class="form-select" id="category_id" name="category_id" required>
                                 <option value="">Select Category</option>
                                 {% for category in categories %}
-                                <option value="{{ category.id }}">{{ category.name }}</option>
+                                <option value="{{ category.id }}" {% if category.id == product.category_id %}selected{% endif %}>
+                                    {{ category.name }}
+                                </option>
                                 {% endfor %}
                             </select>
                         </div>
                         <div class="col-md-6 mb-3">
                             <label for="base_unit" class="form-label">Base Unit *</label>
-                            <input type="text" class="form-control" id="base_unit" name="base_unit" value="bottle" placeholder="e.g., bottle, can, pack" required>
+                            <input type="text" class="form-control" id="base_unit" name="base_unit" value="{{ product.base_unit }}" required>
                             <small class="text-muted">What you actually stock (e.g., bottles)</small>
                         </div>
                     </div>
 
                     <div class="row">
-                        <div class="col-md-4 mb-3">
+                        <div class="col-md-6 mb-3">
                             <label for="base_buying_price" class="form-label">Base Buying Price *</label>
-                            <input type="number" class="form-control" id="base_buying_price" name="base_buying_price" step="0.01" min="0" placeholder="0.00" required>
+                            <input type="number" class="form-control" id="base_buying_price" name="base_buying_price" step="0.01" min="0" value="{{ product.base_buying_price }}" required>
                             <small class="text-muted">Cost per base unit</small>
                         </div>
-                        <div class="col-md-4 mb-3">
-                            <label for="opening_stock" class="form-label">Opening Stock *</label>
-                            <input type="number" class="form-control" id="opening_stock" name="opening_stock" step="0.01" min="0" value="0" required>
-                            <small class="text-muted">Initial quantity</small>
-                        </div>
-                        <div class="col-md-4 mb-3">
+                        <div class="col-md-6 mb-3">
                             <label for="min_stock_level" class="form-label">Min Stock Level *</label>
-                            <input type="number" class="form-control" id="min_stock_level" name="min_stock_level" step="0.01" min="0" value="5" required>
+                            <input type="number" class="form-control" id="min_stock_level" name="min_stock_level" step="0.01" min="0" value="{{ product.min_stock_level }}" required>
                             <small class="text-muted">Alert threshold</small>
                         </div>
                     </div>
 
                     <div class="alert alert-info">
-                        <strong>Note:</strong> After creating the product, you'll need to add product variants (e.g., Tot, 250ml, 750ml) to enable sales.
+                        <strong>Current Stock:</strong> {{ product.current_stock }} {{ product.base_unit }}s<br>
+                        <strong>Note:</strong> To adjust stock levels, use the Daily Stock management page.
                     </div>
 
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-save me-2"></i>Save Product
+                            <i class="fas fa-save me-2"></i>Update Product
                         </button>
                         <a href="{{ url_for('products') }}" class="btn btn-secondary">
                             <i class="fas fa-times me-2"></i>Cancel
@@ -72,4 +70,3 @@
     </div>
 </div>
 {% endblock %}
-

@@ -1,93 +1,199 @@
+<!-- sales/sales.html -->
 {% extends "base.html" %}
-{% block title %}Sales - Liquor Store Management{% endblock %}
-{% block page_title %}Sales Management{% endblock %}
+
+{% block title %}Sales - LiquorPro{% endblock %}
+{% block page_title %}Point of Sale{% endblock %}
+{% block breadcrumb %}Sales / POS{% endblock %}
 
 {% block content %}
-<!-- Header Section -->
-<div class="row mb-3 mb-md-4">
+<div class="row mb-3">
     <div class="col-12">
-        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3">
-            <h2 class="mb-0">Sales Management</h2>
-            <div class="d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center gap-2 w-100 w-md-auto">
-                <div class="d-flex align-items-center flex-fill flex-sm-fill-0">
-                    <label for="dateSelect" class="form-label me-2 text-nowrap">Date:</label>
-                    <input type="date" class="form-control" id="dateSelect" value="{{ selected_date.strftime('%Y-%m-%d') }}"
-                           onchange="window.location.href='{{ url_for('sales') }}?date=' + this.value">
-                </div>
-                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSaleModal">
-                    <i class="fas fa-plus me-2"></i><span class="d-none d-sm-inline">New </span>Sale
-                </button>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <h5>Sales Management</h5>
+                <small class="text-muted">Date: {{ selected_date.strftime('%A, %B %d, %Y') }}</small>
             </div>
+            <form method="GET" action="{{ url_for('sales') }}" class="d-flex gap-2">
+                <input type="date" class="form-control form-control-sm" name="date"
+                       value="{{ selected_date.strftime('%Y-%m-%d') }}"
+                       max="{{ today.strftime('%Y-%m-%d') }}">
+                <button type="submit" class="btn btn-sm btn-primary">
+                    <i class="fas fa-filter"></i>
+                </button>
+            </form>
         </div>
     </div>
 </div>
 
-<!-- Sales Summary Cards -->
-<div class="row mb-3 mb-md-4 g-2 g-md-3">
-    <div class="col-6 col-md-3">
-        <div class="card text-white bg-primary h-100">
-            <div class="card-body p-2 p-md-3">
-                <h6 class="card-title mb-1 small">Total Sales</h6>
-                <h4 class="mb-0 fs-6 fs-md-4">{{ format_currency(total_sales) }}</h4>
+<!-- Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-xl-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <small class="text-muted">Original Amount</small>
+                <h4 class="mb-0">{{ format_currency(total_original) }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <small class="text-muted">Discounts</small>
+                <h4 class="mb-0 text-danger">-{{ format_currency(total_discount) }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <small class="text-muted">Total Sales</small>
+                <h4 class="mb-0 text-success">{{ format_currency(total_sales) }}</h4>
             </div>
         </div>
     </div>
     {% if current_user.role in ['admin', 'manager'] %}
-    <div class="col-6 col-md-3">
-        <div class="card text-white bg-success h-100">
-            <div class="card-body p-2 p-md-3">
-                <h6 class="card-title mb-1 small">Total Profit</h6>
-                <h4 class="mb-0 fs-6 fs-md-4">{{ format_currency(total_profit) }}</h4>
+    <div class="col-sm-6 col-xl-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <small class="text-muted">Profit</small>
+                <h4 class="mb-0 text-primary">{{ format_currency(total_profit) }}</h4>
             </div>
         </div>
     </div>
     {% endif %}
-    <div class="col-6 col-md-3">
-        <div class="card text-white bg-info h-100">
-            <div class="card-body p-2 p-md-3">
-                <h6 class="card-title mb-1 small">Discounts Given</h6>
-                <h4 class="mb-0 fs-6 fs-md-4">{{ format_currency(total_discount) }}</h4>
-            </div>
-        </div>
+</div>
+
+<!-- Add Sale Form -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-primary text-white">
+        <h6 class="mb-0"><i class="fas fa-plus-circle me-2"></i>Record New Sale</h6>
     </div>
-    <div class="col-6 col-md-3">
-        <div class="card text-white bg-secondary h-100">
-            <div class="card-body p-2 p-md-3">
-                <h6 class="card-title mb-1 small">Original Amount</h6>
-                <h4 class="mb-0 fs-6 fs-md-4">{{ format_currency(total_original) }}</h4>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('add_sale') }}" id="saleForm">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Product Variant *</label>
+                    <select class="form-select" name="variant_id" id="variant_id" required>
+                        <option value="">Select Product Variant</option>
+                        {% for variant, product, category, size in variants %}
+                        <option value="{{ variant.id }}"
+                                data-price="{{ variant.selling_price }}"
+                                data-available="{{ variant.get_available_stock_in_variant_units() }}"
+                                data-product="{{ product.name }}"
+                                data-size="{{ size.name }}">
+                            {{ product.name }} - {{ size.name }} ({{ format_currency(variant.selling_price) }})
+                            [{{ variant.get_available_stock_in_variant_units() }} available]
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Quantity *</label>
+                    <input type="number" class="form-control" name="quantity" id="quantity" step="1" min="1" value="1" required>
+                    <small class="text-muted" id="availableStock"></small>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Unit Price *</label>
+                    <input type="number" class="form-control" name="unit_price" id="unit_price" step="0.01" min="0" readonly required>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Total</label>
+                    <input type="text" class="form-control" id="total_display" readonly>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Sale Date *</label>
+                    <input type="date" class="form-control" name="sale_date" value="{{ selected_date.strftime('%Y-%m-%d') }}" max="{{ today.strftime('%Y-%m-%d') }}" required>
+                </div>
             </div>
-        </div>
+
+            <!-- Discount Section -->
+            <div class="row g-3 mt-2">
+                <div class="col-md-3">
+                    <label class="form-label">Discount Type</label>
+                    <select class="form-select" name="discount_type" id="discount_type">
+                        <option value="none">No Discount</option>
+                        <option value="percentage">Percentage (%)</option>
+                        <option value="fixed">Fixed Amount (KES)</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Discount Value</label>
+                    <input type="number" class="form-control" name="discount_value" id="discount_value" step="0.01" min="0" value="0">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Discount Reason</label>
+                    <input type="text" class="form-control" name="discount_reason" id="discount_reason" placeholder="Required if discount > 0">
+                </div>
+            </div>
+
+            <!-- Payment Section -->
+            <div class="row g-3 mt-2">
+                <div class="col-md-3">
+                    <label class="form-label">Cash Amount</label>
+                    <input type="number" class="form-control" name="cash_amount" id="cash_amount" step="0.01" min="0" value="0">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">M-Pesa Amount</label>
+                    <input type="number" class="form-control" name="mpesa_amount" id="mpesa_amount" step="0.01" min="0" value="0">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Credit Amount</label>
+                    <input type="number" class="form-control" name="credit_amount" id="credit_amount" step="0.01" min="0" value="0">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Customer Name</label>
+                    <input type="text" class="form-control" name="customer_name" placeholder="Required for credit">
+                </div>
+            </div>
+
+            <div class="row g-3 mt-2">
+                <div class="col-md-12">
+                    <label class="form-label">Notes</label>
+                    <textarea class="form-control" name="notes" rows="2" placeholder="Optional notes"></textarea>
+                </div>
+            </div>
+
+            <div class="mt-3">
+                <button type="submit" class="btn btn-success">
+                    <i class="fas fa-check me-2"></i>Record Sale
+                </button>
+                <button type="reset" class="btn btn-secondary">
+                    <i class="fas fa-redo me-2"></i>Reset
+                </button>
+            </div>
+        </form>
     </div>
 </div>
 
-<!-- Sales Table -->
-<div class="card">
+<!-- Sales List -->
+<div class="card shadow-sm">
     <div class="card-header">
-        <h5 class="mb-0"><i class="fas fa-list me-2"></i>Sales for {{ selected_date.strftime('%B %d, %Y') }}</h5>
+        <h6 class="mb-0"><i class="fas fa-list me-2"></i>Today's Sales ({{ sales_data|length }} transactions)</h6>
     </div>
-    <div class="card-body p-0">
-        {% if sales_data %}
-        <!-- Desktop Table View -->
-        <div class="table-responsive d-none d-lg-block">
-            <table class="table table-hover mb-0">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm">
                 <thead>
                     <tr>
                         <th>Time</th>
                         <th>Product</th>
                         <th>Qty</th>
-                        <th>Unit Price</th>
+                        <th>Price</th>
                         <th>Original</th>
                         <th>Discount</th>
                         <th>Total</th>
                         <th>Payment</th>
+                        {% if current_user.role in ['admin', 'manager'] %}
+                        <th>Profit</th>
                         <th>Attendant</th>
+                        {% endif %}
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for sale, variant, product, user, category, size in sales_data %}
                     <tr>
-                        <td>{{ sale.timestamp.strftime('%H:%M') }}</td>
+                        <td>{{ sale.timestamp.strftime('%I:%M %p') }}</td>
                         <td>
                             <strong>{{ product.name }}</strong><br>
                             <small class="text-muted">{{ size.name }}</small>
@@ -97,12 +203,9 @@
                         <td>{{ format_currency(sale.original_amount) }}</td>
                         <td>
                             {% if sale.discount_amount > 0 %}
-                                <span class="text-warning">-{{ format_currency(sale.discount_amount) }}</span>
-                                {% if sale.discount_reason %}
-                                <br><small class="text-muted">{{ sale.discount_reason }}</small>
-                                {% endif %}
+                            <span class="text-danger">-{{ format_currency(sale.discount_amount) }}</span>
                             {% else %}
-                                -
+                            -
                             {% endif %}
                         </td>
                         <td><strong>{{ format_currency(sale.total_amount) }}</strong></td>
@@ -113,445 +216,83 @@
                                 {% if sale.credit_amount > 0 %}Credit: {{ format_currency(sale.credit_amount) }}{% endif %}
                             </small>
                         </td>
-                        <td>{{ user.full_name }}</td>
+                        {% if current_user.role in ['admin', 'manager'] %}
+                        <td class="text-success">{{ format_currency(sale.get_profit()) }}</td>
+                        <td><small>{{ user.full_name }}</small></td>
+                        {% endif %}
                         <td>
-                            <div class="btn-group btn-group-sm">
-                                {% if current_user.role in ['admin', 'manager'] or sale.attendant_id == current_user.id %}
-                                <a href="{{ url_for('edit_sale', sale_id=sale.id) }}" class="btn btn-outline-primary btn-sm">
-                                    <i class="fas fa-edit"></i>
-                                </a>
-                                <form method="POST" action="{{ url_for('delete_sale', sale_id=sale.id) }}" style="display: inline;"
-                                      onsubmit="return confirm('Are you sure you want to delete this sale?')">
-                                    <button type="submit" class="btn btn-outline-danger btn-sm">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </form>
-                                {% endif %}
-                            </div>
+                            <a href="{{ url_for('edit_sale', sale_id=sale.id) }}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                            <form method="POST" action="{{ url_for('delete_sale', sale_id=sale.id) }}" style="display: inline;">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this sale?')">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-
-        <!-- Mobile Card View -->
-        <div class="d-block d-lg-none">
-            {% for sale, variant, product, user, category, size in sales_data %}
-            <div class="card border-0 border-bottom rounded-0">
-                <div class="card-body p-3">
-                    <div class="d-flex justify-content-between align-items-start mb-2">
-                        <div>
-                            <h6 class="mb-1 fw-bold">{{ product.name }}</h6>
-                            <small class="text-muted">{{ size.name }} • {{ sale.timestamp.strftime('%H:%M') }}</small>
-                        </div>
-                        <div class="text-end">
-                            <div class="fw-bold text-primary">{{ format_currency(sale.total_amount) }}</div>
-                            {% if sale.discount_amount > 0 %}
-                            <small class="text-warning">-{{ format_currency(sale.discount_amount) }}</small>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    <div class="row g-2 mb-2">
-                        <div class="col-4">
-                            <small class="text-muted d-block">Quantity</small>
-                            <span>{{ sale.quantity }}</span>
-                        </div>
-                        <div class="col-4">
-                            <small class="text-muted d-block">Unit Price</small>
-                            <span>{{ format_currency(sale.unit_price) }}</span>
-                        </div>
-                        <div class="col-4">
-                            <small class="text-muted d-block">Original</small>
-                            <span>{{ format_currency(sale.original_amount) }}</span>
-                        </div>
-                    </div>
-
-                    <div class="mb-2">
-                        <small class="text-muted d-block">Payment Method</small>
-                        <div class="d-flex flex-wrap gap-2">
-                            {% if sale.cash_amount > 0 %}
-                            <span class="badge bg-success">Cash: {{ format_currency(sale.cash_amount) }}</span>
-                            {% endif %}
-                            {% if sale.mpesa_amount > 0 %}
-                            <span class="badge bg-info">M-Pesa: {{ format_currency(sale.mpesa_amount) }}</span>
-                            {% endif %}
-                            {% if sale.credit_amount > 0 %}
-                            <span class="badge bg-warning">Credit: {{ format_currency(sale.credit_amount) }}</span>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    <div class="d-flex justify-content-between align-items-center">
-                        <small class="text-muted">By: {{ user.full_name }}</small>
-                        {% if current_user.role in ['admin', 'manager'] or sale.attendant_id == current_user.id %}
-                        <div class="btn-group btn-group-sm">
-                            <a href="{{ url_for('edit_sale', sale_id=sale.id) }}" class="btn btn-outline-primary btn-sm">
-                                <i class="fas fa-edit"></i>
-                            </a>
-                            <form method="POST" action="{{ url_for('delete_sale', sale_id=sale.id) }}" style="display: inline;"
-                                  onsubmit="return confirm('Are you sure you want to delete this sale?')">
-                                <button type="submit" class="btn btn-outline-danger btn-sm">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </form>
-                        </div>
-                        {% endif %}
-                    </div>
-
-                    {% if sale.discount_reason %}
-                    <div class="mt-2">
-                        <small class="text-muted">Discount reason: {{ sale.discount_reason }}</small>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="p-4 text-center text-muted">
-            <i class="fas fa-receipt fa-3x mb-3 opacity-25"></i>
-            <p class="mb-0">No sales recorded for this date</p>
-        </div>
-        {% endif %}
     </div>
 </div>
 
-<!-- Add Sale Modal -->
-<div class="modal fade" id="addSaleModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Record New Sale</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="POST" action="{{ url_for('add_sale') }}">
-                <div class="modal-body px-4" style="max-height: 70vh; overflow-y: auto;">
-                    <!-- Product Selection -->
-                    <div class="mb-4">
-                        <h6><i class="fas fa-box me-2"></i>Product Information</h6>
-                        <div class="row g-3">
-                            <div class="col-12">
-                                <label for="variant_id" class="form-label">Product Variant</label>
-                                <select class="form-select" id="variant_id" name="variant_id" required>
-                                    <option value="">Select product variant</option>
-                                    {% for variant, product, category, size in variants %}
-                                    <option value="{{ variant.id }}" data-price="{{ variant.selling_price }}" data-available="{{ variant.get_available_stock_in_variant_units() }}">
-                                        {{ product.name }} - {{ size.name }} ({{ format_currency(variant.selling_price) }})
-                                        - Available: {{ variant.get_available_stock_in_variant_units() }}
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="quantity" class="form-label">Quantity</label>
-                                <input type="number" class="form-control" id="quantity" name="quantity" min="1" step="0.5" required>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="unit_price" class="form-label">Unit Price</label>
-                                <input type="number" class="form-control" id="unit_price" name="unit_price" step="0.01" required readonly>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="sale_date" class="form-label">Sale Date</label>
-                                <input type="date" class="form-control" id="sale_date" name="sale_date" value="{{ today.strftime('%Y-%m-%d') }}" required>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Discount Section -->
-                    <div class="mb-4">
-                        <div class="d-flex align-items-center mb-3 ps-2">
-                            <div class="form-check form-switch me-3">
-                                <input class="form-check-input fs-5" type="checkbox" id="applyDiscount" style="transform: scale(1.2);">
-                                <label class="form-check-label fw-semibold fs-6 ms-2" for="applyDiscount">
-                                    <i class="fas fa-percent me-2 text-primary"></i>Apply Discount
-                                </label>
-                            </div>
-                        </div>
-                        <div id="discountSection" class="d-none">
-                            <div class="row g-3">
-                                <div class="col-md-4">
-                                    <label for="discount_type" class="form-label">Type</label>
-                                    <select class="form-select" id="discount_type" name="discount_type">
-                                        <option value="percentage">Percentage (%)</option>
-                                        <option value="fixed">Fixed Amount</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-4">
-                                    <label for="discount_value" class="form-label">Value</label>
-                                    <input type="number" class="form-control" id="discount_value" name="discount_value" step="0.01" min="0">
-                                </div>
-                                <div class="col-md-4">
-                                    <label for="discount_reason" class="form-label">Reason</label>
-                                    <input type="text" class="form-control" id="discount_reason" name="discount_reason" placeholder="Optional">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Payment Section -->
-                    <div class="mb-4">
-                        <h6><i class="fas fa-credit-card me-2"></i>Payment Methods</h6>
-                        <div class="row g-3 mb-3">
-                            <div class="col-md-4">
-                                <div class="form-check form-switch ms-3">
-                                    <input class="form-check-input fs-5" type="checkbox" id="useCash" style="transform: scale(1.2);">
-                                    <label class="form-check-label fw-bold text-primary fs-6 ms-2" for="useCash">
-                                        <i class="fas fa-money-bill me-2"></i>Cash
-                                    </label>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="form-check form-switch ms-3">
-                                    <input class="form-check-input fs-5" type="checkbox" id="useMpesa" style="transform: scale(1.2);">
-                                    <label class="form-check-label fw-bold text-success fs-6 ms-2" for="useMpesa">
-                                        <i class="fas fa-mobile-alt me-2"></i>M-Pesa
-                                    </label>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="form-check form-switch ms-3">
-                                    <input class="form-check-input fs-5" type="checkbox" id="useCredit" style="transform: scale(1.2);">
-                                    <label class="form-check-label fw-bold text-warning fs-6 ms-2" for="useCredit">
-                                        <i class="fas fa-credit-card me-2"></i>Credit
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-4 d-none" id="cashField">
-                                <label for="cash_amount" class="form-label">Cash Amount</label>
-                                <input type="number" class="form-control" id="cash_amount" name="cash_amount" step="0.01" min="0" value="0">
-                            </div>
-                            <div class="col-md-4 d-none" id="mpesaField">
-                                <label for="mpesa_amount" class="form-label">M-Pesa Amount</label>
-                                <input type="number" class="form-control" id="mpesa_amount" name="mpesa_amount" step="0.01" min="0" value="0">
-                            </div>
-                            <div class="col-md-4 d-none" id="creditField">
-                                <label for="credit_amount" class="form-label">Credit Amount</label>
-                                <input type="number" class="form-control" id="credit_amount" name="credit_amount" step="0.01" min="0" value="0">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Customer Information -->
-                    <div id="customerSection" class="mb-4 d-none">
-                        <h6><i class="fas fa-user me-2"></i>Customer Information</h6>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label for="customer_name" class="form-label">Customer Name <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="customer_name" name="customer_name" placeholder="Required for credit sales">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Notes -->
-                    <div class="mb-3">
-                        <label for="notes" class="form-label">Notes</label>
-                        <textarea class="form-control" id="notes" name="notes" rows="2" placeholder="Optional notes"></textarea>
-                    </div>
-
-                    <!-- Sale Calculation Summary -->
-                    <div class="alert alert-info d-none" id="saleCalculation">
-                        <h6 class="alert-heading mb-2"><i class="fas fa-calculator me-2"></i>Sale Summary</h6>
-                        <div id="calculationDetails"></div>
-                        <div id="paymentMismatch" class="text-danger mt-2 d-none">
-                            <small><i class="fas fa-exclamation-triangle me-1"></i>Payment total doesn't match sale total!</small>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="submitSale">Record Sale</button>
-                </div>
-            </form>
-        </div>
-    </div>
+{% if not sales_data %}
+<div class="alert alert-info mt-3">
+    <i class="fas fa-info-circle me-2"></i>No sales recorded for this date.
 </div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Form elements
     const variantSelect = document.getElementById('variant_id');
     const quantityInput = document.getElementById('quantity');
     const unitPriceInput = document.getElementById('unit_price');
+    const totalDisplay = document.getElementById('total_display');
+    const availableStock = document.getElementById('availableStock');
+    const discountType = document.getElementById('discount_type');
+    const discountValue = document.getElementById('discount_value');
 
-    // Discount elements
-    const applyDiscountCheck = document.getElementById('applyDiscount');
-    const discountSection = document.getElementById('discountSection');
-    const discountTypeSelect = document.getElementById('discount_type');
-    const discountValueInput = document.getElementById('discount_value');
-
-    // Payment elements
-    const useCashCheck = document.getElementById('useCash');
-    const useMpesaCheck = document.getElementById('useMpesa');
-    const useCreditCheck = document.getElementById('useCredit');
-    const cashField = document.getElementById('cashField');
-    const mpesaField = document.getElementById('mpesaField');
-    const creditField = document.getElementById('creditField');
-    const cashInput = document.getElementById('cash_amount');
-    const mpesaInput = document.getElementById('mpesa_amount');
-    const creditInput = document.getElementById('credit_amount');
-
-    // Customer section
-    const customerSection = document.getElementById('customerSection');
-    const customerNameInput = document.getElementById('customer_name');
-
-    // Calculation elements
-    const calculationDiv = document.getElementById('saleCalculation');
-    const calculationDetails = document.getElementById('calculationDetails');
-    const paymentMismatch = document.getElementById('paymentMismatch');
-
-    // Update unit price when variant changes
-    variantSelect?.addEventListener('change', function() {
-        const selectedOption = this.options[this.selectedIndex];
+    function updateCalculations() {
+        const selectedOption = variantSelect.options[variantSelect.selectedIndex];
         if (selectedOption.value) {
-            unitPriceInput.value = selectedOption.dataset.price;
-            calculateSale();
-        }
-    });
+            const price = parseFloat(selectedOption.dataset.price);
+            const available = parseInt(selectedOption.dataset.available);
+            const quantity = parseFloat(quantityInput.value) || 0;
 
-    // Toggle discount section
-    applyDiscountCheck?.addEventListener('change', function() {
-        discountSection.classList.toggle('d-none', !this.checked);
-        if (!this.checked) {
-            discountValueInput.value = '';
-        }
-        calculateSale();
-    });
+            unitPriceInput.value = price.toFixed(2);
+            availableStock.textContent = `${available} available`;
 
-    // Payment method toggles
-    useCashCheck?.addEventListener('change', function() {
-        cashField.classList.toggle('d-none', !this.checked);
-        if (!this.checked) cashInput.value = '0';
-        calculatePayment();
-    });
+            // Calculate total with discount
+            let total = price * quantity;
+            const discType = discountType.value;
+            const discVal = parseFloat(discountValue.value) || 0;
 
-    useMpesaCheck?.addEventListener('change', function() {
-        mpesaField.classList.toggle('d-none', !this.checked);
-        if (!this.checked) mpesaInput.value = '0';
-        calculatePayment();
-    });
-
-    useCreditCheck?.addEventListener('change', function() {
-        creditField.classList.toggle('d-none', !this.checked);
-        customerSection.classList.toggle('d-none', !this.checked);
-        if (!this.checked) {
-            creditInput.value = '0';
-            customerNameInput.removeAttribute('required');
-        } else {
-            customerNameInput.setAttribute('required', '');
-        }
-        calculatePayment();
-    });
-
-    // Calculate sale totals
-    function calculateSale() {
-        const quantity = parseFloat(quantityInput.value) || 0;
-        const unitPrice = parseFloat(unitPriceInput.value) || 0;
-
-        if (quantity > 0 && unitPrice > 0) {
-            const originalAmount = quantity * unitPrice;
-            let discountAmount = 0;
-
-            if (applyDiscountCheck.checked) {
-                const discountType = discountTypeSelect.value;
-                const discountValue = parseFloat(discountValueInput.value) || 0;
-
-                if (discountType === 'percentage') {
-                    discountAmount = (originalAmount * discountValue) / 100;
-                } else if (discountType === 'fixed') {
-                    discountAmount = Math.min(discountValue, originalAmount);
-                }
+            if (discType === 'percentage') {
+                total = total - (total * discVal / 100);
+            } else if (discType === 'fixed') {
+                total = total - discVal;
             }
 
-            const totalAmount = originalAmount - discountAmount;
-            window.saleTotal = totalAmount; // Store for payment validation
+            totalDisplay.value = 'KES ' + Math.max(0, total).toFixed(2);
 
-            calculationDetails.innerHTML = `
-                <div class="row g-2 small">
-                    <div class="col-4">
-                        <span class="text-muted">Original:</span><br>
-                        <span class="fw-bold">${originalAmount.toFixed(2)}</span>
-                    </div>
-                    <div class="col-4">
-                        <span class="text-muted">Discount:</span><br>
-                        <span class="text-warning">-${discountAmount.toFixed(2)}</span>
-                    </div>
-                    <div class="col-4">
-                        <span class="text-muted">Total:</span><br>
-                        <span class="fw-bold fs-6 text-primary">${totalAmount.toFixed(2)}</span>
-                    </div>
-                </div>
-            `;
-            calculationDiv.classList.remove('d-none');
-
-            // Auto-select and fill cash if no payment method selected
-            if (!useCashCheck.checked && !useMpesaCheck.checked && !useCreditCheck.checked) {
-                useCashCheck.checked = true;
-                useCashCheck.dispatchEvent(new Event('change'));
-                cashInput.value = totalAmount.toFixed(2);
+            // Validate quantity
+            if (quantity > available) {
+                quantityInput.setCustomValidity(`Only ${available} units available`);
+            } else {
+                quantityInput.setCustomValidity('');
             }
-
-            validatePayment();
-        } else {
-            calculationDiv.classList.add('d-none');
         }
     }
 
-    function calculatePayment() {
-        // Auto-fill remaining amount
-        const totalAmount = window.saleTotal || 0;
-        if (totalAmount > 0) {
-            const currentPayments = [];
-
-            if (useCashCheck.checked && cashInput.value) currentPayments.push(parseFloat(cashInput.value));
-            if (useMpesaCheck.checked && mpesaInput.value) currentPayments.push(parseFloat(mpesaInput.value));
-            if (useCreditCheck.checked && creditInput.value) currentPayments.push(parseFloat(creditInput.value));
-
-            const totalPaid = currentPayments.reduce((sum, amount) => sum + amount, 0);
-            const remaining = totalAmount - totalPaid;
-
-            // Auto-fill first empty payment method
-            if (remaining > 0) {
-                if (useCashCheck.checked && !cashInput.value) {
-                    cashInput.value = remaining.toFixed(2);
-                } else if (useMpesaCheck.checked && !mpesaInput.value) {
-                    mpesaInput.value = remaining.toFixed(2);
-                } else if (useCreditCheck.checked && !creditInput.value) {
-                    creditInput.value = remaining.toFixed(2);
-                }
-            }
-        }
-        validatePayment();
-    }
-
-    function validatePayment() {
-        const totalAmount = window.saleTotal || 0;
-        const totalPayment = (parseFloat(cashInput.value) || 0) +
-                            (parseFloat(mpesaInput.value) || 0) +
-                            (parseFloat(creditInput.value) || 0);
-
-        const mismatch = Math.abs(totalAmount - totalPayment) > 0.01;
-        paymentMismatch.classList.toggle('d-none', !mismatch);
-
-        const submitBtn = document.getElementById('submitSale');
-        submitBtn.disabled = mismatch || totalAmount <= 0;
-    }
-
-    // Event listeners for calculation
-    [quantityInput, unitPriceInput, discountValueInput].forEach(input => {
-        input?.addEventListener('input', calculateSale);
-    });
-
-    [cashInput, mpesaInput, creditInput].forEach(input => {
-        input?.addEventListener('input', validatePayment);
-    });
-
-    discountTypeSelect?.addEventListener('change', calculateSale);
+    variantSelect.addEventListener('change', updateCalculations);
+    quantityInput.addEventListener('input', updateCalculations);
+    discountType.addEventListener('change', updateCalculations);
+    discountValue.addEventListener('input', updateCalculations);
 });
 </script>
 {% endblock %}
+

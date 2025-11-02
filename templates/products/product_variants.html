@@ -1,383 +1,110 @@
+<!-- ================================ -->
+<!-- products/product_variants.html - UPDATED with Delete -->
+<!-- ================================ -->
+
 {% extends "base.html" %}
 
-{% block title %}{{ product.name }} Variants - Liquor Store Management{% endblock %}
-
+{% block title %}{{ product.name }} Variants - LiquorPro{% endblock %}
 {% block page_title %}Product Variants{% endblock %}
+{% block breadcrumb %}Inventory / Products / {{ product.name }} / Variants{% endblock %}
 
 {% block content %}
-<div class="row">
+<div class="row mb-3">
     <div class="col-12">
-        <!-- Product Header -->
-        <div class="card mb-4">
-            <div class="card-body">
-                <div class="row align-items-center">
-                    <div class="col-md-8">
-                        <h4 class="card-title mb-2">
-                            <i class="fas fa-wine-bottle me-2"></i>{{ product.name }}
-                        </h4>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <p class="mb-1"><strong>Category:</strong> {{ product.category.name }}</p>
-                                <p class="mb-1"><strong>Base Unit:</strong> {{ product.base_unit }}</p>
-                                <p class="mb-1"><strong>Base Buying Price:</strong> {{ format_currency(product.base_buying_price) }}</p>
-                            </div>
-                            <div class="col-md-6">
-                                <p class="mb-1"><strong>Current Stock:</strong> 
-                                    <span class="badge bg-{{ get_stock_status_color(product.current_stock, product.min_stock_level) }}">
-                                        <i class="fas fa-{{ get_stock_icon(product.current_stock, product.min_stock_level) }} me-1"></i>
-                                        {{ product.current_stock }} {{ product.base_unit }}s
-                                    </span>
-                                </p>
-                                <p class="mb-1"><strong>Minimum Level:</strong> {{ product.min_stock_level }} {{ product.base_unit }}s</p>
-                                {% if product.last_stock_update %}
-                                <p class="mb-0"><strong>Last Updated:</strong> {{ product.last_stock_update.strftime('%Y-%m-%d %H:%M') }}</p>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4 text-end">
-                        {% if current_user.role in ['admin', 'manager'] %}
-                        <a href="{{ url_for('add_variant', product_id=product.id) }}" class="btn btn-success mb-2">
-                            <i class="fas fa-plus me-2"></i>Add New Variant
-                        </a>
-                        <br>
-                        {% endif %}
-                        <a href="{{ url_for('products') }}" class="btn btn-outline-secondary">
-                            <i class="fas fa-arrow-left me-2"></i>Back to Products
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Variants Table -->
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">
-                    <i class="fas fa-list me-2"></i>Product Variants ({{ variants|length }})
-                </h5>
-                {% if variants %}
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h5>{{ product.name }} - Variants</h5>
                 <small class="text-muted">
-                    Active: {{ variants|selectattr('0.is_active')|list|length }} | 
-                    Inactive: {{ variants|rejectattr('0.is_active')|list|length }}
+                    Category: {{ product.category.name }} |
+                    Base Unit: {{ product.base_unit }} |
+                    Stock: {{ product.current_stock }} {{ product.base_unit }}s
                 </small>
+            </div>
+            <div class="d-flex gap-2">
+                {% if current_user.role in ['admin', 'manager'] %}
+                <a href="{{ url_for('add_variant', product_id=product.id) }}" class="btn btn-primary">
+                    <i class="fas fa-plus me-2"></i>Add Variant
+                </a>
                 {% endif %}
-            </div>
-            <div class="card-body">
-                {% if variants %}
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Size</th>
-                                <th>Selling Price</th>
-                                <th>Conversion Factor</th>
-                                <th>Available Quantity</th>
-                                <th>Profit per Unit</th>
-                                <th>Profit Margin</th>
-                                <th>Status</th>
-                                {% if current_user.role in ['admin', 'manager'] %}
-                                <th>Actions</th>
-                                {% endif %}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for variant, size in variants %}
-                            <tr class="{{ 'table-secondary' if not variant.is_active }}">
-                                <td>
-                                    <div>
-                                        <strong>{{ size.name }}</strong>
-                                        {% if size.description %}
-                                        <br><small class="text-muted">{{ size.description }}</small>
-                                        {% endif %}
-                                    </div>
-                                </td>
-                                <td>
-                                    <strong>{{ format_currency(variant.selling_price) }}</strong>
-                                </td>
-                                <td>
-                                    <span class="badge bg-info">{{ variant.conversion_factor }}</span>
-                                    {% if variant.conversion_factor < 1 %}
-                                    <br><small class="text-muted">{{ (1/variant.conversion_factor)|round(1) }} per {{ product.base_unit }}</small>
-                                    {% elif variant.conversion_factor > 1 %}
-                                    <br><small class="text-muted">{{ variant.conversion_factor }} {{ product.base_unit }}s</small>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% set available_qty = variant.get_available_stock_in_variant_units() %}
-                                    <span class="badge bg-{{ 'success' if available_qty > 10 else 'warning' if available_qty > 0 else 'danger' }}">
-                                        {{ available_qty }} units
-                                    </span>
-                                    {% if available_qty == 0 %}
-                                    <br><small class="text-danger">Out of stock</small>
-                                    {% elif available_qty <= 5 %}
-                                    <br><small class="text-warning">Low stock</small>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% set profit = variant.get_profit_per_unit() %}
-                                    <span class="badge bg-{{ 'success' if profit > 0 else 'danger' if profit < 0 else 'secondary' }}">
-                                        {{ format_currency(profit) }}
-                                    </span>
-                                </td>
-                                <td>
-                                    {% set margin = ((profit / variant.selling_price) * 100) if variant.selling_price > 0 else 0 %}
-                                    <span class="badge bg-{{ 'success' if margin > 20 else 'warning' if margin > 0 else 'danger' }}">
-                                        {{ margin|round(1) }}%
-                                    </span>
-                                </td>
-                                <td>
-                                    {% if variant.is_active %}
-                                    <span class="badge bg-success">
-                                        <i class="fas fa-check me-1"></i>Active
-                                    </span>
-                                    {% else %}
-                                    <span class="badge bg-secondary">
-                                        <i class="fas fa-times me-1"></i>Inactive
-                                    </span>
-                                    {% endif %}
-                                </td>
-                                {% if current_user.role in ['admin', 'manager'] %}
-                                <td>
-                                    <div class="btn-group btn-group-sm">
-                                        <a href="{{ url_for('edit_variant', variant_id=variant.id) }}" 
-                                           class="btn btn-outline-primary" title="Edit Variant">
-                                            <i class="fas fa-edit"></i>
-                                        </a>
-                                        <form method="POST" action="{{ url_for('toggle_variant_status', variant_id=variant.id) }}" 
-                                              class="d-inline" onsubmit="return confirm('Are you sure you want to {{ 'deactivate' if variant.is_active else 'activate' }} this variant?')">
-                                            <button type="submit" class="btn btn-outline-{{ 'warning' if variant.is_active else 'success' }}" 
-                                                    title="{{ 'Deactivate' if variant.is_active else 'Activate' }} Variant">
-                                                <i class="fas fa-{{ 'eye-slash' if variant.is_active else 'eye' }}"></i>
-                                            </button>
-                                        </form>
-                                    </div>
-                                </td>
-                                {% endif %}
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Summary Statistics -->
-                <div class="row mt-4">
-                    <div class="col-md-3">
-                        <div class="text-center">
-                            {% set active_variants = variants|selectattr('0.is_active')|list %}
-                            <h5 class="text-primary">{{ active_variants|length }}</h5>
-                            <small class="text-muted">Active Variants</small>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="text-center">
-                            {% set total_sellable = 0 %}
-                            {% for variant, size in variants %}
-                                {% if variant.is_active %}
-                                    {% set total_sellable = total_sellable + variant.get_available_stock_in_variant_units() %}
-                                {% endif %}
-                            {% endfor %}
-                            <h5 class="text-{{ 'success' if total_sellable > 0 else 'danger' }}">{{ total_sellable }}</h5>
-                            <small class="text-muted">Total Sellable Units</small>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="text-center">
-                            {% set total_profit = 0 %}
-                            {% set active_count = 0 %}
-                            {% for variant, size in variants %}
-                                {% if variant.is_active %}
-                                    {% set total_profit = total_profit + variant.get_profit_per_unit() %}
-                                    {% set active_count = active_count + 1 %}
-                                {% endif %}
-                            {% endfor %}
-                            {% set avg_margin = (total_profit / active_count) if active_count > 0 else 0 %}
-                            <h5 class="text-{{ 'success' if avg_margin > 0 else 'danger' }}">{{ format_currency(avg_margin) }}</h5>
-                            <small class="text-muted">Avg. Profit/Unit</small>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="text-center">
-                            {% set min_price = None %}
-                            {% set max_price = None %}
-                            {% for variant, size in variants %}
-                                {% if variant.is_active %}
-                                    {% if min_price is none or variant.selling_price < min_price %}
-                                        {% set min_price = variant.selling_price %}
-                                    {% endif %}
-                                    {% if max_price is none or variant.selling_price > max_price %}
-                                        {% set max_price = variant.selling_price %}
-                                    {% endif %}
-                                {% endif %}
-                            {% endfor %}
-                            {% if min_price is not none %}
-                            <h5 class="text-info">{{ format_currency(min_price) }}{% if max_price != min_price %} - {{ format_currency(max_price) }}{% endif %}</h5>
-                            {% else %}
-                            <h5 class="text-muted">-</h5>
-                            {% endif %}
-                            <small class="text-muted">Price Range</small>
-                        </div>
-                    </div>
-                </div>
-
-                {% else %}
-                <!-- Empty State -->
-                <div class="text-center py-5">
-                    <div class="mb-4">
-                        <i class="fas fa-box-open text-muted" style="font-size: 3rem;"></i>
-                    </div>
-                    <h5 class="text-muted mb-3">No Variants Created</h5>
-                    <p class="text-muted mb-4">
-                        This product doesn't have any variants yet. Create variants to define different 
-                        sizes and pricing options for selling this product.
-                    </p>
-                    {% if current_user.role in ['admin', 'manager'] %}
-                    <a href="{{ url_for('add_variant', product_id=product.id) }}" class="btn btn-success">
-                        <i class="fas fa-plus me-2"></i>Create First Variant
-                    </a>
-                    {% endif %}
-                </div>
-                {% endif %}
+                <a href="{{ url_for('products') }}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Back
+                </a>
             </div>
         </div>
-
-        <!-- Additional Information -->
-        {% if variants %}
-        <div class="row mt-4">
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        <h6 class="card-title mb-0">
-                            <i class="fas fa-calculator me-2"></i>Stock Calculations
-                        </h6>
-                    </div>
-                    <div class="card-body">
-                        <table class="table table-sm">
-                            <tbody>
-                                <tr>
-                                    <td><strong>Base Stock:</strong></td>
-                                    <td>{{ product.current_stock }} {{ product.base_unit }}s</td>
-                                </tr>
-                                {% for variant, size in variants %}
-                                {% if variant.is_active %}
-                                <tr>
-                                    <td>{{ size.name }}:</td>
-                                    <td>{{ variant.get_available_stock_in_variant_units() }} units available</td>
-                                </tr>
-                                {% endif %}
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        <h6 class="card-title mb-0">
-                            <i class="fas fa-chart-line me-2"></i>Profitability Analysis
-                        </h6>
-                    </div>
-                    <div class="card-body">
-                        {% if variants|selectattr('0.is_active')|list %}
-                        <table class="table table-sm">
-                            <tbody>
-                                {% for variant, size in variants %}
-                                {% if variant.is_active %}
-                                {% set profit = variant.get_profit_per_unit() %}
-                                {% set margin = ((profit / variant.selling_price) * 100) if variant.selling_price > 0 else 0 %}
-                                <tr>
-                                    <td>{{ size.name }}:</td>
-                                    <td>
-                                        <span class="badge bg-{{ 'success' if profit > 0 else 'danger' if profit < 0 else 'secondary' }}">
-                                            {{ margin|round(1) }}% margin
-                                        </span>
-                                    </td>
-                                </tr>
-                                {% endif %}
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                        {% else %}
-                        <p class="text-muted mb-0">No active variants to analyze</p>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Stock Alerts -->
-        {% if product.is_low_stock() or product.is_out_of_stock() %}
-        <div class="alert alert-{{ 'danger' if product.is_out_of_stock() else 'warning' }} mt-3">
-            <h6 class="alert-heading">
-                <i class="fas fa-{{ 'exclamation-triangle' if product.is_out_of_stock() else 'exclamation-circle' }} me-2"></i>
-                Stock Alert
-            </h6>
-            {% if product.is_out_of_stock() %}
-            <p class="mb-0">This product is <strong>out of stock</strong>. No variants can be sold until stock is replenished.</p>
-            {% else %}
-            <p class="mb-0">This product is <strong>low on stock</strong> ({{ product.current_stock }} {{ product.base_unit }}s remaining, minimum: {{ product.min_stock_level }}).</p>
-            {% endif %}
-        </div>
-        {% endif %}
     </div>
 </div>
-{% endblock %}
 
-{% block scripts %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Add confirmation dialogs for status changes
-    const toggleForms = document.querySelectorAll('form[action*="toggle_variant_status"]');
-    toggleForms.forEach(form => {
-        form.addEventListener('submit', function(e) {
-            const isActive = this.querySelector('button i').classList.contains('fa-eye-slash');
-            const action = isActive ? 'deactivate' : 'activate';
-            const variantName = this.closest('tr').querySelector('td:first-child strong').textContent;
-            
-            if (!confirm(`Are you sure you want to ${action} the "${variantName}" variant?`)) {
-                e.preventDefault();
-            }
-        });
-    });
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Variant</th>
+                        <th>Size</th>
+                        <th>Selling Price</th>
+                        <th>Conversion Factor</th>
+                        <th>Available Quantity</th>
+                        <th>Profit/Unit</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for variant, size in variants %}
+                    <tr>
+                        <td><strong>{{ variant.get_display_name() }}</strong></td>
+                        <td>{{ size.name }}</td>
+                        <td>{{ format_currency(variant.selling_price) }}</td>
+                        <td>{{ variant.conversion_factor }}x</td>
+                        <td>
+                            <span class="badge bg-{{ 'success' if variant.get_available_stock_in_variant_units() > 0 else 'danger' }}">
+                                {{ variant.get_available_stock_in_variant_units() }} units
+                            </span>
+                        </td>
+                        <td class="text-success">{{ format_currency(variant.get_profit_per_unit()) }}</td>
+                        <td>
+                            {% if variant.is_active %}
+                            <span class="badge bg-success">Active</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if current_user.role in ['admin', 'manager'] %}
+                            <a href="{{ url_for('edit_variant', variant_id=variant.id) }}" class="btn btn-sm btn-outline-primary" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                            <form method="POST" action="{{ url_for('toggle_variant_status', variant_id=variant.id) }}" style="display: inline;">
+                                {% if variant.is_active %}
+                                <button type="submit" class="btn btn-sm btn-outline-warning" title="Deactivate" onclick="return confirm('Deactivate this variant?')">
+                                    <i class="fas fa-ban"></i>
+                                </button>
+                                {% else %}
+                                <button type="submit" class="btn btn-sm btn-outline-success" title="Activate" onclick="return confirm('Activate this variant?')">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                                {% endif %}
+                            </form>
+                            <form method="POST" action="{{ url_for('delete_variant', variant_id=variant.id) }}" style="display: inline;">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete" onclick="return confirm('Delete this variant? This action cannot be undone!')">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
 
-    // Highlight low stock variants
-    const rows = document.querySelectorAll('tbody tr');
-    rows.forEach(row => {
-        const stockBadge = row.querySelector('td:nth-child(4) .badge');
-        if (stockBadge && stockBadge.classList.contains('bg-danger')) {
-            row.style.backgroundColor = '#fff5f5';
-        } else if (stockBadge && stockBadge.classList.contains('bg-warning')) {
-            row.style.backgroundColor = '#fffbf0';
-        }
-    });
-
-    // Add tooltips for conversion factors
-    const conversionBadges = document.querySelectorAll('td:nth-child(3) .badge');
-    conversionBadges.forEach(badge => {
-        const factor = parseFloat(badge.textContent);
-        let tooltip = '';
-        
-        if (factor < 1) {
-            const perUnit = Math.round(1/factor);
-            tooltip = `${perUnit} variants per {{ product.base_unit }}`;
-        } else if (factor > 1) {
-            tooltip = `${factor} {{ product.base_unit }}s per variant`;
-        } else {
-            tooltip = '1:1 ratio with base unit';
-        }
-        
-        badge.setAttribute('title', tooltip);
-        badge.setAttribute('data-bs-toggle', 'tooltip');
-    });
-
-    // Initialize Bootstrap tooltips
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
-});
-</script>
+{% if not variants %}
+<div class="alert alert-warning">
+    <i class="fas fa-exclamation-triangle me-2"></i>
+    No variants found. Add variants to enable sales for this product.
+</div>
+{% endif %}
 {% endblock %}
