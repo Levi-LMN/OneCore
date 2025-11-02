@@ -657,16 +657,38 @@ def delete_user(user_id):
         flash('User not found!', 'error')
         return redirect(url_for('users'))
 
-    # Check if user has sales records
-    has_sales = Sale.query.filter_by(attendant_id=user_id).first()
-    if has_sales:
-        flash(f'Cannot delete user "{user.full_name}" - they have sales records. Consider deactivating instead.',
-              'error')
-        return redirect(url_for('users'))
-
-    old_values = user.to_dict()
     user_name = user.full_name
 
+    # 🔍 Check all models that reference User
+    has_sales = Sale.query.filter_by(attendant_id=user_id).first()
+    has_expenses = Expense.query.filter_by(recorded_by=user_id).first()
+    has_purchases = StockPurchase.query.filter_by(recorded_by=user_id).first()
+    has_categories = Category.query.filter_by(created_by=user_id).first()
+    has_products = Product.query.filter_by(created_by=user_id).first()
+    has_variants = ProductVariant.query.filter_by(created_by=user_id).first()
+    has_sizes = Size.query.filter_by(created_by=user_id).first()
+    has_expense_categories = ExpenseCategory.query.filter_by(created_by=user_id).first()
+    has_daily_stocks = DailyStock.query.filter_by(updated_by=user_id).first()
+    has_summaries = DailySummary.query.filter_by(last_updated_by=user_id).first()
+    has_audits = AuditLog.query.filter_by(user_id=user_id).first()
+
+    if any([
+        has_sales, has_expenses, has_purchases,
+        has_categories, has_products, has_variants,
+        has_sizes, has_expense_categories,
+        has_daily_stocks, has_summaries, has_audits
+    ]):
+        flash(
+            f'User "{user_name}" cannot be deleted because they have linked records '
+            f'(sales, expenses, stock updates, etc.). Please deactivate them instead.',
+            'error'
+        )
+        return redirect(url_for('users'))
+
+    # ✅ Safe to delete (no related records)
+    old_values = user.to_dict()
+
+    # Commit audit log first
     create_audit_log(
         action='DELETE',
         table_name='user',
@@ -674,9 +696,12 @@ def delete_user(user_id):
         old_values=old_values,
         changes_summary=f"User deleted: {user_name}"
     )
+    db.session.commit()
 
+    # Delete user
     db.session.delete(user)
     db.session.commit()
+
     flash(f'User "{user_name}" deleted successfully!', 'success')
     return redirect(url_for('users'))
 
