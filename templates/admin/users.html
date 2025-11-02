@@ -1,4 +1,4 @@
-<!-- admin/users.html - UPDATED with Edit & Reset Password -->
+<!-- admin/users.html - UPDATED with Edit, Reset Password & Eye Toggle -->
 {% extends "base.html" %}
 
 {% block title %}User Management - LiquorPro{% endblock %}
@@ -122,13 +122,23 @@
 
                     <div class="mb-3">
                         <label for="new_password" class="form-label">New Password *</label>
-                        <input type="password" class="form-control" id="new_password" name="new_password" minlength="6" required>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="new_password" name="new_password" minlength="6" required>
+                            <button type="button" class="btn btn-outline-secondary toggle-password" data-target="new_password">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
                         <small class="text-muted">Minimum 6 characters</small>
                     </div>
 
                     <div class="mb-3">
                         <label for="confirm_password" class="form-label">Confirm Password *</label>
-                        <input type="password" class="form-control" id="confirm_password" name="confirm_password" minlength="6" required>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="confirm_password" name="confirm_password" minlength="6" required>
+                            <button type="button" class="btn btn-outline-secondary toggle-password" data-target="confirm_password">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
                     </div>
 
                     <div class="form-check">
@@ -151,6 +161,9 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- Font Awesome for icons -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
 <script>
 let resetPasswordModal;
 
@@ -169,6 +182,20 @@ document.addEventListener('DOMContentLoaded', function() {
             return false;
         }
     });
+
+    // Password eye toggle for both fields
+    document.querySelectorAll('.toggle-password').forEach(function(button) {
+        button.addEventListener('click', function() {
+            const targetId = this.getAttribute('data-target');
+            const input = document.getElementById(targetId);
+            const icon = this.querySelector('i');
+
+            const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
+            input.setAttribute('type', type);
+            icon.classList.toggle('fa-eye');
+            icon.classList.toggle('fa-eye-slash');
+        });
+    });
 });
 
 function showResetPasswordModal(userId, fullName, username) {
@@ -181,4 +208,3 @@ function showResetPasswordModal(userId, fullName, username) {
 }
 </script>
 {% endblock %}
-

@@ -33,7 +33,12 @@
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="password" class="form-label">Password *</label>
-                            <input type="password" class="form-control" id="password" name="password" minlength="6" required>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="password" name="password" minlength="6" required>
+                                <button type="button" class="btn btn-outline-secondary" id="togglePassword">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
                             <small class="text-muted">Minimum 6 characters</small>
                         </div>
                         <div class="col-md-6 mb-3">
@@ -69,4 +74,28 @@
         </div>
     </div>
 </div>
+
+<!-- Password toggle script -->
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const passwordInput = document.getElementById("password");
+    const toggleButton = document.getElementById("togglePassword");
+    const icon = toggleButton.querySelector("i");
+
+    toggleButton.addEventListener("click", function () {
+        const type = passwordInput.getAttribute("type") === "password" ? "text" : "password";
+        passwordInput.setAttribute("type", type);
+
+        // Toggle icon style
+        icon.classList.toggle("fa-eye");
+        icon.classList.toggle("fa-eye-slash");
+    });
+});
+</script>
+
+{% endblock %}
+
+{% block extra_head %}
+<!-- Font Awesome for eye icon -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 {% endblock %}
