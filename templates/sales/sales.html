@@ -1,4 +1,4 @@
-<!-- sales/sales.html - UPDATED VERSION WITH STAY ON DATE FEATURE -->
+<!-- sales/sales.html - UPDATED WITH DECIMAL QUANTITY SUPPORT -->
 {% extends "base.html" %}
 
 {% block title %}Sales - LiquorPro{% endblock %}
@@ -25,6 +25,14 @@
     #paymentSummary .badge {
         font-weight: 600;
         padding: 0.5rem 0.75rem;
+    }
+
+    .variant-result-item {
+        transition: background-color 0.2s;
+    }
+
+    .variant-result-item:hover {
+        background-color: #f8f9fa !important;
     }
 </style>
 
@@ -134,7 +142,14 @@
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">Quantity *</label>
-                    <input type="number" class="form-control" name="quantity" id="quantity" step="1" min="1" value="1" required>
+                    <input type="number"
+                           class="form-control"
+                           name="quantity"
+                           id="quantity"
+                           step="0.01"
+                           min="0.01"
+                           value="1"
+                           required>
                     <small class="text-muted" id="availableStock"></small>
                 </div>
                 <div class="col-md-2">
@@ -346,6 +361,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const quickCredit = document.getElementById('quickCredit');
 
     let currentTotal = 0;
+    let currentAvailable = 0;
 
     // Load "stick to date" preference from localStorage
     const stickPreference = localStorage.getItem('stickToDate') === 'true';
@@ -381,8 +397,8 @@ document.addEventListener('DOMContentLoaded', function() {
             allVariants.push({
                 value: option.value,
                 text: option.text,
-                price: option.dataset.price,
-                available: option.dataset.available,
+                price: parseFloat(option.dataset.price),
+                available: parseFloat(option.dataset.available),
                 product: option.dataset.product,
                 size: option.dataset.size,
                 category: option.dataset.category,
@@ -410,9 +426,7 @@ document.addEventListener('DOMContentLoaded', function() {
             variantResults.innerHTML = filtered.map(v => `
                 <div class="variant-result-item p-2 border-bottom"
                      style="cursor: pointer;"
-                     data-variant-id="${v.value}"
-                     onmouseover="this.style.backgroundColor='#f8f9fa'"
-                     onmouseout="this.style.backgroundColor='white'">
+                     data-variant-id="${v.value}">
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
                             <strong>${v.product}</strong> - ${v.size}
@@ -420,9 +434,9 @@ document.addEventListener('DOMContentLoaded', function() {
                             <small class="text-muted">${v.category}</small>
                         </div>
                         <div class="text-end">
-                            <strong>KES ${parseFloat(v.price).toLocaleString()}</strong>
+                            <strong>KES ${v.price.toLocaleString()}</strong>
                             <br>
-                            <small class="text-${v.available > 5 ? 'success' : 'warning'}">
+                            <small class="text-${v.available > 5 ? 'success' : v.available > 0 ? 'warning' : 'danger'}">
                                 ${v.available} in stock
                             </small>
                         </div>
@@ -451,11 +465,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (variant) {
             variantSearch.value = `${variant.product} - ${variant.size}`;
             selectedVariantDisplay.textContent = `${variant.product} - ${variant.size}`;
+            currentAvailable = variant.available;
         }
 
         variantDropdown.style.display = 'none';
         updateCalculations();
         quantityInput.focus();
+        quantityInput.select();
     }
 
     // Close dropdown when clicking outside
@@ -485,11 +501,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const selectedOption = variantSelect.options[variantSelect.selectedIndex];
         if (selectedOption.value) {
             const price = parseFloat(selectedOption.dataset.price);
-            const available = parseInt(selectedOption.dataset.available);
+            const available = parseFloat(selectedOption.dataset.available);
             const quantity = parseFloat(quantityInput.value) || 0;
 
             unitPriceInput.value = price.toFixed(2);
             availableStock.textContent = `${available} available`;
+            currentAvailable = available;
 
             // Calculate total with discount
             let total = price * quantity;
@@ -505,10 +522,19 @@ document.addEventListener('DOMContentLoaded', function() {
             currentTotal = Math.max(0, total);
             totalDisplay.value = 'KES ' + currentTotal.toFixed(2);
 
-            // Validate quantity
+            // Validate quantity (allow decimals)
             if (quantity > available) {
+                quantityInput.classList.add('border-danger');
+                availableStock.classList.add('text-danger');
+                availableStock.textContent = `⚠️ Only ${available} available (Exceeds by ${(quantity - available).toFixed(2)})`;
                 quantityInput.setCustomValidity(`Only ${available} units available`);
+            } else if (quantity <= 0) {
+                quantityInput.classList.add('border-danger');
+                quantityInput.setCustomValidity('Quantity must be greater than 0');
             } else {
+                quantityInput.classList.remove('border-danger');
+                availableStock.classList.remove('text-danger');
+                availableStock.textContent = `${available} available`;
                 quantityInput.setCustomValidity('');
             }
 
@@ -613,6 +639,9 @@ document.addEventListener('DOMContentLoaded', function() {
             availableStock.textContent = '';
             totalDisplay.value = '';
             currentTotal = 0;
+            currentAvailable = 0;
+            quantityInput.classList.remove('border-danger');
+            availableStock.classList.remove('text-danger');
             updatePaymentSummary();
             variantSearch.focus();
         }, 10);

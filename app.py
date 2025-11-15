@@ -2352,6 +2352,67 @@ def delete_stock_purchase(purchase_id):
 
     return redirect(url_for('stock_purchases'))
 
+
+@app.route('/update_stock', methods=['POST'])
+@admin_required
+def update_stock():
+    """Update daily stock opening balance"""
+    try:
+        data = request.get_json()
+        product_id = data.get('product_id')
+        date_str = data.get('date')
+        opening_stock = safe_float(data.get('opening_stock'))
+
+        current_user = get_current_user()
+
+        if not all([product_id, date_str]):
+            return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+
+        # Parse date
+        try:
+            stock_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid date format'}), 400
+
+        # Get or create daily stock
+        daily_stock = get_or_create_daily_stock(product_id, stock_date)
+        old_values = daily_stock.to_dict()
+
+        # Update opening stock
+        daily_stock.opening_stock = opening_stock
+        daily_stock.updated_by = current_user.id
+        daily_stock.updated_at = datetime.now(timezone.utc)
+
+        # Recalculate closing stock
+        daily_stock.calculate_closing_stock()
+
+        new_values = daily_stock.to_dict()
+        changes_summary = get_changes_summary(old_values, new_values)
+
+        # Create audit log
+        create_audit_log(
+            action='UPDATE',
+            table_name='daily_stock',
+            record_id=daily_stock.id,
+            old_values=old_values,
+            new_values=new_values,
+            changes_summary=f"Opening stock adjusted for {daily_stock.product.name} on {stock_date} - {changes_summary}"
+        )
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': 'Stock updated successfully',
+            'closing_stock': daily_stock.closing_stock
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error updating stock: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+        
 # EXPENSES ROUTES
 @app.route('/expenses')
 @login_required
@@ -2389,23 +2450,40 @@ def expenses():
 @login_required
 def add_expense():
     try:
+        # Check if we should return to a specific date
+        return_date = request.form.get('return_date')
+
+        # Extract form data
         description = request.form['description'].strip()
         amount = safe_float(request.form['amount'])
         expense_category_id = int(request.form['expense_category_id'])
-        expense_date = datetime.strptime(request.form['expense_date'], '%Y-%m-%d').date()
+        expense_date_str = request.form['expense_date']
         notes = request.form.get('notes', '').strip()
+
         current_user = get_current_user()
 
+        # Validate required fields
         if not all([description, expense_category_id]) or amount <= 0:
             flash('Please fill in all required fields with valid values!', 'error')
-            return redirect(url_for('expenses'))
+            redirect_date = return_date if return_date else expense_date_str
+            return redirect(url_for('expenses', date=redirect_date))
+
+        # Parse expense date
+        try:
+            expense_date = datetime.strptime(expense_date_str, '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            flash('Invalid expense date format!', 'error')
+            redirect_date = return_date if return_date else date.today().strftime('%Y-%m-%d')
+            return redirect(url_for('expenses', date=redirect_date))
 
         # Validate expense category
         expense_category = db.session.get(ExpenseCategory, expense_category_id)
         if not expense_category or not expense_category.is_active:
             flash('Invalid expense category selected!', 'error')
-            return redirect(url_for('expenses'))
+            redirect_date = return_date if return_date else expense_date_str
+            return redirect(url_for('expenses', date=redirect_date))
 
+        # Create expense record
         expense = Expense(
             description=description,
             amount=amount,
@@ -2418,7 +2496,8 @@ def add_expense():
         db.session.add(expense)
         db.session.flush()
 
-        changes_summary = f"Expense recorded: {description} - KES {amount} ({expense_category.name})"
+        # Create audit log with detailed summary
+        changes_summary = f"Expense recorded: {description} - KES {amount:,.2f} ({expense_category.name})"
         if notes:
             changes_summary += f" - Notes: {notes}"
 
@@ -2430,21 +2509,30 @@ def add_expense():
             changes_summary=changes_summary
         )
 
-        # Update daily summary
+        # Update daily summary for the expense date
         update_daily_summary(expense_date)
 
         db.session.commit()
-        flash(f'Expense recorded successfully! {changes_summary}', 'success')
 
-    except ValueError:
+        flash(f'✅ Expense recorded successfully! {changes_summary}', 'success')
+
+        # Redirect to the return_date if provided (sticky date), otherwise use expense_date
+        redirect_date = return_date if return_date else expense_date_str
+        return redirect(url_for('expenses', date=redirect_date))
+
+    except ValueError as ve:
+        db.session.rollback()
         flash('Invalid expense date format!', 'error')
+        app.logger.error(f"ValueError in add_expense: {str(ve)}")
+        redirect_date = request.form.get('return_date', date.today().strftime('%Y-%m-%d'))
+        return redirect(url_for('expenses', date=redirect_date))
+
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error recording expense: {str(e)}")
         flash(f'Error recording expense: {str(e)}', 'error')
-
-    return redirect(url_for('expenses'))
-
+        redirect_date = request.form.get('return_date', date.today().strftime('%Y-%m-%d'))
+        return redirect(url_for('expenses', date=redirect_date))
 
 @app.route('/edit_expense/<int:expense_id>', methods=['GET', 'POST'])
 @login_required

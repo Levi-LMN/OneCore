@@ -1,4 +1,4 @@
-<!-- expenses/expenses.html -->
+<!-- expenses/expenses.html - UPDATED WITH STICKY DATE FEATURE -->
 {% extends "base.html" %}
 
 {% block title %}Expenses - LiquorPro{% endblock %}
@@ -13,13 +13,22 @@
                 <h5>Expense Management</h5>
                 <small class="text-muted">Date: {{ selected_date.strftime('%A, %B %d, %Y') }} | Total: {{ format_currency(total_expenses) }}</small>
             </div>
-            <form method="GET" action="{{ url_for('expenses') }}" class="d-flex gap-2">
-                <input type="date" class="form-control form-control-sm" name="date"
+            <form method="GET" action="{{ url_for('expenses') }}" class="d-flex gap-2 align-items-center">
+                <input type="date"
+                       class="form-control form-control-sm"
+                       name="date"
+                       id="dateInput"
                        value="{{ selected_date.strftime('%Y-%m-%d') }}"
                        max="{{ today.strftime('%Y-%m-%d') }}">
                 <button type="submit" class="btn btn-sm btn-primary">
-                    <i class="fas fa-filter"></i> Filter
+                    <i class="fas fa-filter"></i>
                 </button>
+                <div class="form-check form-switch ms-2">
+                    <input class="form-check-input" type="checkbox" id="stickToDate">
+                    <label class="form-check-label small text-muted" for="stickToDate" style="white-space: nowrap;">
+                        Stay on date
+                    </label>
+                </div>
             </form>
         </div>
     </div>
@@ -31,15 +40,25 @@
         <h6 class="mb-0"><i class="fas fa-plus-circle me-2"></i>Record New Expense</h6>
     </div>
     <div class="card-body">
-        <form method="POST" action="{{ url_for('add_expense') }}">
+        <form method="POST" action="{{ url_for('add_expense') }}" id="expenseForm">
             <div class="row g-3">
                 <div class="col-md-4">
                     <label class="form-label">Description *</label>
-                    <input type="text" class="form-control" name="description" placeholder="e.g., Rent, Utilities" required>
+                    <input type="text"
+                           class="form-control"
+                           name="description"
+                           placeholder="e.g., Rent, Utilities"
+                           required>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Amount *</label>
-                    <input type="number" class="form-control" name="amount" step="0.01" min="0" placeholder="0.00" required>
+                    <input type="number"
+                           class="form-control"
+                           name="amount"
+                           step="0.01"
+                           min="0"
+                           placeholder="0.00"
+                           required>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Category *</label>
@@ -52,18 +71,29 @@
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">Date *</label>
-                    <input type="date" class="form-control" name="expense_date" value="{{ selected_date.strftime('%Y-%m-%d') }}" required>
+                    <input type="date"
+                           class="form-control"
+                           name="expense_date"
+                           value="{{ selected_date.strftime('%Y-%m-%d') }}"
+                           max="{{ today.strftime('%Y-%m-%d') }}"
+                           required>
                 </div>
             </div>
             <div class="row g-3 mt-2">
                 <div class="col-12">
                     <label class="form-label">Notes</label>
-                    <textarea class="form-control" name="notes" rows="2" placeholder="Optional notes"></textarea>
+                    <textarea class="form-control"
+                              name="notes"
+                              rows="2"
+                              placeholder="Optional notes"></textarea>
                 </div>
             </div>
             <div class="mt-3">
                 <button type="submit" class="btn btn-warning text-white">
                     <i class="fas fa-save me-2"></i>Record Expense
+                </button>
+                <button type="reset" class="btn btn-secondary">
+                    <i class="fas fa-redo me-2"></i>Reset
                 </button>
             </div>
         </form>
@@ -73,7 +103,7 @@
 <!-- Expenses List -->
 <div class="card shadow-sm">
     <div class="card-header">
-        <h6 class="mb-0"><i class="fas fa-list me-2"></i>Expenses ({{ expenses_data|length }} items)</h6>
+        <h6 class="mb-0"><i class="fas fa-list me-2"></i>Expenses for {{ selected_date.strftime('%B %d, %Y') }} ({{ expenses_data|length }} items)</h6>
     </div>
     <div class="card-body">
         <div class="table-responsive">
@@ -100,20 +130,27 @@
                         <td><strong class="text-danger">{{ format_currency(expense.amount) }}</strong></td>
                         <td>
                             {% if expense.notes %}
-                            <small>{{ expense.notes[:50] }}...</small>
+                            <small>{{ expense.notes[:50] }}{% if expense.notes|length > 50 %}...{% endif %}</small>
                             {% else %}
                             -
                             {% endif %}
                         </td>
                         {% if current_user.role in ['admin', 'manager'] %}
-                        <td>{{ user.full_name }}</td>
+                        <td><small>{{ user.full_name }}</small></td>
                         {% endif %}
                         <td>
-                            <a href="{{ url_for('edit_expense', expense_id=expense.id) }}" class="btn btn-sm btn-outline-primary">
+                            <a href="{{ url_for('edit_expense', expense_id=expense.id) }}"
+                               class="btn btn-sm btn-outline-primary"
+                               title="Edit Expense">
                                 <i class="fas fa-edit"></i>
                             </a>
-                            <form method="POST" action="{{ url_for('delete_expense', expense_id=expense.id) }}" style="display: inline;">
-                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this expense?')">
+                            <form method="POST"
+                                  action="{{ url_for('delete_expense', expense_id=expense.id) }}"
+                                  style="display: inline;">
+                                <button type="submit"
+                                        class="btn btn-sm btn-outline-danger"
+                                        title="Delete Expense"
+                                        onclick="return confirm('Delete this expense? This action cannot be undone.')">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </form>
@@ -133,3 +170,49 @@
 {% endif %}
 {% endblock %}
 
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const stickToDateCheckbox = document.getElementById('stickToDate');
+    const expenseForm = document.getElementById('expenseForm');
+    const dateInput = document.getElementById('dateInput');
+
+    // Load "stick to date" preference from localStorage
+    const stickPreference = localStorage.getItem('stickToDateExpenses') === 'true';
+    if (stickPreference) {
+        stickToDateCheckbox.checked = true;
+    }
+
+    // Save preference when checkbox changes
+    stickToDateCheckbox.addEventListener('change', function() {
+        localStorage.setItem('stickToDateExpenses', this.checked);
+    });
+
+    // Modify form submission to include selected date if "stick to date" is enabled
+    expenseForm.addEventListener('submit', function(e) {
+        if (stickToDateCheckbox.checked && dateInput && dateInput.value) {
+            // Check if return_date hidden input already exists
+            let returnDateInput = expenseForm.querySelector('input[name="return_date"]');
+
+            if (!returnDateInput) {
+                // Add hidden input with the current viewing date
+                returnDateInput = document.createElement('input');
+                returnDateInput.type = 'hidden';
+                returnDateInput.name = 'return_date';
+                returnDateInput.value = dateInput.value;
+                expenseForm.appendChild(returnDateInput);
+            } else {
+                // Update existing hidden input
+                returnDateInput.value = dateInput.value;
+            }
+        }
+    });
+
+    // Auto-focus first input field
+    const firstInput = expenseForm.querySelector('input[name="description"]');
+    if (firstInput) {
+        firstInput.focus();
+    }
+});
+</script>
+{% endblock %}
