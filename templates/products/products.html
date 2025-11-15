@@ -1,4 +1,4 @@
-<!-- products/products.html - UPDATED with Edit/Delete -->
+<!-- products/products.html - UPDATED with Search Feature -->
 {% extends "base.html" %}
 
 {% block title %}Products - LiquorPro{% endblock %}
@@ -11,7 +11,7 @@
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div>
                 <h5>Manage Products</h5>
-                <small class="text-muted">Total Products: {{ products_data|length }}</small>
+                <small class="text-muted">Total Products: <span id="total-products">{{ products_data|length }}</span></small>
             </div>
             {% if current_user.role in ['admin', 'manager'] %}
             <a href="{{ url_for('add_product') }}" class="btn btn-primary">
@@ -22,14 +22,39 @@
     </div>
 </div>
 
-<!-- Filters -->
+<!-- Search and Filters -->
 <div class="card shadow-sm mb-3">
     <div class="card-body">
-        <form method="GET" action="{{ url_for('products') }}">
+        <form method="GET" action="{{ url_for('products') }}" id="filterForm">
             <div class="row g-2">
+                <!-- Search Bar -->
                 <div class="col-md-4">
+                    <label class="form-label small">Search Products</label>
+                    <div class="input-group">
+                        <span class="input-group-text">
+                            <i class="fas fa-search"></i>
+                        </span>
+                        <input type="text"
+                               id="searchInput"
+                               class="form-control"
+                               placeholder="Search by product name..."
+                               autocomplete="off">
+                        <button type="button"
+                                class="btn btn-outline-secondary"
+                                id="clearSearch"
+                                style="display: none;">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <small class="text-muted">
+                        <span id="search-results-count"></span>
+                    </small>
+                </div>
+
+                <!-- Category Filter -->
+                <div class="col-md-3">
                     <label class="form-label small">Category</label>
-                    <select name="category_id" class="form-select form-select-sm">
+                    <select name="category_id" class="form-select form-select-sm" id="categoryFilter">
                         <option value="all">All Categories</option>
                         {% for category in categories %}
                         <option value="{{ category.id }}" {% if selected_category_id == category.id|string %}selected{% endif %}>
@@ -38,16 +63,20 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-4">
+
+                <!-- Stock Status Filter -->
+                <div class="col-md-3">
                     <label class="form-label small">Stock Status</label>
-                    <select name="stock_status" class="form-select form-select-sm">
+                    <select name="stock_status" class="form-select form-select-sm" id="stockFilter">
                         <option value="all" {% if selected_stock_status == 'all' %}selected{% endif %}>All Stock</option>
                         <option value="good_stock" {% if selected_stock_status == 'good_stock' %}selected{% endif %}>Good Stock</option>
                         <option value="low_stock" {% if selected_stock_status == 'low_stock' %}selected{% endif %}>Low Stock</option>
                         <option value="out_of_stock" {% if selected_stock_status == 'out_of_stock' %}selected{% endif %}>Out of Stock</option>
                     </select>
                 </div>
-                <div class="col-md-4">
+
+                <!-- Apply Filters Button -->
+                <div class="col-md-2">
                     <label class="form-label small">&nbsp;</label>
                     <button type="submit" class="btn btn-sm btn-primary w-100">
                         <i class="fas fa-filter me-1"></i>Apply Filters
@@ -62,7 +91,7 @@
 <div class="card shadow-sm">
     <div class="card-body">
         <div class="table-responsive">
-            <table class="table table-hover">
+            <table class="table table-hover" id="productsTable">
                 <thead>
                     <tr>
                         <th>Product</th>
@@ -75,9 +104,11 @@
                         <th>Actions</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="productsTableBody">
                     {% for product, category, variants in products_data %}
-                    <tr>
+                    <tr class="product-row"
+                        data-product-name="{{ product.name|lower }}"
+                        data-category-name="{{ category.name|lower }}">
                         <td><strong>{{ product.name }}</strong></td>
                         <td>{{ category.name }}</td>
                         <td>{{ product.base_unit }}</td>
@@ -92,15 +123,24 @@
                             <span class="badge bg-info">{{ variants|length }} variant{{ 's' if variants|length != 1 else '' }}</span>
                         </td>
                         <td>
-                            <a href="{{ url_for('product_variants', product_id=product.id) }}" class="btn btn-sm btn-outline-primary" title="Manage Variants">
+                            <a href="{{ url_for('product_variants', product_id=product.id) }}"
+                               class="btn btn-sm btn-outline-primary"
+                               title="Manage Variants">
                                 <i class="fas fa-layer-group"></i>
                             </a>
                             {% if current_user.role in ['admin', 'manager'] %}
-                            <a href="{{ url_for('edit_product', product_id=product.id) }}" class="btn btn-sm btn-outline-info" title="Edit Product">
+                            <a href="{{ url_for('edit_product', product_id=product.id) }}"
+                               class="btn btn-sm btn-outline-info"
+                               title="Edit Product">
                                 <i class="fas fa-edit"></i>
                             </a>
-                            <form method="POST" action="{{ url_for('delete_product', product_id=product.id) }}" style="display: inline;">
-                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete Product" onclick="return confirm('Delete this product? This will also delete all its variants and cannot be undone!')">
+                            <form method="POST"
+                                  action="{{ url_for('delete_product', product_id=product.id) }}"
+                                  style="display: inline;">
+                                <button type="submit"
+                                        class="btn btn-sm btn-outline-danger"
+                                        title="Delete Product"
+                                        onclick="return confirm('Delete this product? This will also delete all its variants and cannot be undone!')">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </form>
@@ -114,6 +154,17 @@
     </div>
 </div>
 
+<!-- No Results Message -->
+<div class="card shadow-sm" id="noResultsCard" style="display: none;">
+    <div class="card-body text-center py-5">
+        <i class="fas fa-search text-muted" style="font-size: 48px;"></i>
+        <p class="text-muted mt-3 mb-0">No products found matching your search.</p>
+        <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="resetSearch">
+            Clear Search
+        </button>
+    </div>
+</div>
+
 {% if not products_data %}
 <div class="card shadow-sm">
     <div class="card-body text-center py-5">
@@ -122,7 +173,106 @@
     </div>
 </div>
 {% endif %}
+
+<style>
+.product-row.hidden {
+    display: none;
+}
+
+.highlight {
+    background-color: #fff3cd;
+    font-weight: bold;
+}
+
+#searchInput:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('searchInput');
+    const clearSearchBtn = document.getElementById('clearSearch');
+    const resetSearchBtn = document.getElementById('resetSearch');
+    const productsTableBody = document.getElementById('productsTableBody');
+    const noResultsCard = document.getElementById('noResultsCard');
+    const productsTable = document.getElementById('productsTable');
+    const totalProductsSpan = document.getElementById('total-products');
+    const searchResultsCount = document.getElementById('search-results-count');
+    const allRows = document.querySelectorAll('.product-row');
+    const totalProducts = allRows.length;
+
+    function performSearch(searchTerm) {
+        const term = searchTerm.toLowerCase().trim();
+        let visibleCount = 0;
+
+        allRows.forEach(row => {
+            const productName = row.dataset.productName;
+            const categoryName = row.dataset.categoryName;
+
+            if (term === '' || productName.includes(term) || categoryName.includes(term)) {
+                row.classList.remove('hidden');
+                visibleCount++;
+            } else {
+                row.classList.add('hidden');
+            }
+        });
+
+        // Update UI based on results
+        if (term !== '' && visibleCount === 0) {
+            productsTable.parentElement.parentElement.style.display = 'none';
+            noResultsCard.style.display = 'block';
+            searchResultsCount.textContent = 'No matches found';
+        } else if (term !== '') {
+            productsTable.parentElement.parentElement.style.display = 'block';
+            noResultsCard.style.display = 'none';
+            searchResultsCount.textContent = `Showing ${visibleCount} of ${totalProducts} products`;
+        } else {
+            productsTable.parentElement.parentElement.style.display = 'block';
+            noResultsCard.style.display = 'none';
+            searchResultsCount.textContent = '';
+        }
+
+        // Show/hide clear button
+        clearSearchBtn.style.display = term !== '' ? 'block' : 'none';
+    }
+
+    function clearSearch() {
+        searchInput.value = '';
+        performSearch('');
+        searchInput.focus();
+    }
+
+    // Search input event listener
+    searchInput.addEventListener('input', function() {
+        performSearch(this.value);
+    });
+
+    // Clear search button
+    clearSearchBtn.addEventListener('click', clearSearch);
+
+    // Reset search button (in no results card)
+    if (resetSearchBtn) {
+        resetSearchBtn.addEventListener('click', clearSearch);
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        // Ctrl/Cmd + K to focus search
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+            e.preventDefault();
+            searchInput.focus();
+        }
+
+        // ESC to clear search
+        if (e.key === 'Escape' && document.activeElement === searchInput) {
+            clearSearch();
+        }
+    });
+
+    // Add keyboard shortcut hint
+    searchInput.setAttribute('title', 'Press Ctrl+K to focus search, ESC to clear');
+});
+</script>
 {% endblock %}
-
-
-
