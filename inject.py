@@ -1,552 +1,362 @@
-#!/usr/bin/env python3
 """
-Data injection script for MoseVines Liquor Store
-Injects stock sheet data from PDF into Flask application database
-Date: 7/8/2025 Stock Sheet
+Import November Stock Data into Liquor Store System
+This script imports products with their base bottle size as the variant.
+Each product size (e.g., County 750ml, County 250ml) is a separate product.
+Tots/glasses will be added manually later as additional variants.
 """
 
+from app import app, db
+from models import Category, Size, Product, ProductVariant, User
 from datetime import datetime, date
-import sys
-import os
 
-# Import your models
-from models import (
-    db, User, Category, Size, Product, ProductVariant,
-    DailyStock, ExpenseCategory, Sale
-)
+# Product data extracted from November stocks PDF
+# Each size is a separate product (e.g., "Black & White 1L" and "Black & White 750ML" are different products)
+PRODUCTS = [
+    # BEERS
+    {"name": "Snapp", "category": "Beers", "size": "Can/Bottle", "selling_price": 250, "buying_price": 181, "opening_stock": 0},
+    {"name": "Guarana", "category": "Beers", "size": "Can/Bottle", "selling_price": 250, "buying_price": 181, "opening_stock": 15},
+    {"name": "Black Ice", "category": "Beers", "size": "Can/Bottle", "selling_price": 250, "buying_price": 181, "opening_stock": 19},
+    {"name": "Pineapple Punch", "category": "Beers", "size": "Can/Bottle", "selling_price": 250, "buying_price": 181, "opening_stock": 19},
+    {"name": "Tusker Malt", "category": "Beers", "size": "Can/Bottle", "selling_price": 250, "buying_price": 247, "opening_stock": 0},
+    {"name": "Heineken", "category": "Beers", "size": "Can/Bottle", "selling_price": 350, "buying_price": 287, "opening_stock": 0},
+    {"name": "Tusker Lager", "category": "Beers", "size": "Can/Bottle", "selling_price": 300, "buying_price": 203, "opening_stock": 19},
+    {"name": "Faxe", "category": "Beers", "size": "Can/Bottle", "selling_price": 320, "buying_price": 263, "opening_stock": 0},
+    {"name": "Martens Beer", "category": "Beers", "size": "Can/Bottle", "selling_price": 350, "buying_price": 263, "opening_stock": 10},
+    {"name": "Tusker Lite", "category": "Beers", "size": "Can/Bottle", "selling_price": 250, "buying_price": 247, "opening_stock": 0},
+    {"name": "Guinness", "category": "Beers", "size": "Can/Bottle", "selling_price": 300, "buying_price": 220, "opening_stock": 22},
+    {"name": "Kingfisher", "category": "Beers", "size": "Can/Bottle", "selling_price": 250, "buying_price": 192, "opening_stock": 0},
+    {"name": "Hunters Gold", "category": "Beers", "size": "Can/Bottle", "selling_price": 250, "buying_price": 203, "opening_stock": 0},
+    {"name": "Balozi", "category": "Beers", "size": "Can/Bottle", "selling_price": 300, "buying_price": 203, "opening_stock": 15},
+    {"name": "Pilsner", "category": "Beers", "size": "Can/Bottle", "selling_price": 300, "buying_price": 203, "opening_stock": 0},
+    {"name": "Whitecap", "category": "Beers", "size": "Can/Bottle", "selling_price": 300, "buying_price": 220, "opening_stock": 18},
+    {"name": "Savannah", "category": "Beers", "size": "Can/Bottle", "selling_price": 200, "buying_price": 240, "opening_stock": 0},
+    {"name": "KO", "category": "Beers", "size": "Can/Bottle", "selling_price": 300, "buying_price": 220, "opening_stock": 10},
+    {"name": "Tusker Cider", "category": "Beers", "size": "Can/Bottle", "selling_price": 300, "buying_price": 241, "opening_stock": 14},
+    {"name": "Banana Beer", "category": "Beers", "size": "Can/Bottle", "selling_price": 130, "buying_price": 72, "opening_stock": 33},
 
-# Import your Flask app
-from app import create_app  # Adjust based on your app structure
+    # SPIRITS - 1 LITRE
+    {"name": "Flirt Vodka 1L", "category": "Spirits", "size": "1 Litre", "selling_price": 1700, "buying_price": 1030, "opening_stock": 1},
+    {"name": "Ballantines 1L", "category": "Spirits", "size": "1 Litre", "selling_price": 3600, "buying_price": 2679, "opening_stock": 2},
+    {"name": "Double Black 1L", "category": "Spirits", "size": "1 Litre", "selling_price": 6800, "buying_price": 5550, "opening_stock": 2},
+    {"name": "J & B 1L", "category": "Spirits", "size": "1 Litre", "selling_price": 2700, "buying_price": 2017, "opening_stock": 2},
+    {"name": "Red Label 1L", "category": "Spirits", "size": "1 Litre", "selling_price": 2500, "buying_price": 2050, "opening_stock": 3},
+    {"name": "Black Label 1L", "category": "Spirits", "size": "1 Litre", "selling_price": 4500, "buying_price": 3810, "opening_stock": 5},
+    {"name": "Black & White 1L", "category": "Spirits", "size": "1 Litre", "selling_price": 2000, "buying_price": 1525, "opening_stock": 4},
+    {"name": "Jagermeister 1L", "category": "Spirits", "size": "1 Litre", "selling_price": 3700, "buying_price": 3100, "opening_stock": 2},
+    {"name": "Jameson 1L", "category": "Spirits", "size": "1 Litre", "selling_price": 3700, "buying_price": 3024, "opening_stock": 3},
+    {"name": "Jack Daniels 1L", "category": "Spirits", "size": "1 Litre", "selling_price": 4500, "buying_price": 3850, "opening_stock": 3},
+    {"name": "Captain Morgan Spiced 1L", "category": "Spirits", "size": "1 Litre", "selling_price": 2800, "buying_price": 2184, "opening_stock": 5},
+    {"name": "Malibu 1L", "category": "Spirits", "size": "1 Litre", "selling_price": 2500, "buying_price": 1575, "opening_stock": 2},
+    {"name": "4th Street 1.5L", "category": "Spirits", "size": "1 Litre", "selling_price": 2000, "buying_price": 1680, "opening_stock": 1},
+    {"name": "8PM 1L", "category": "Spirits", "size": "1 Litre", "selling_price": 1300, "buying_price": 1000, "opening_stock": 4},
+    {"name": "Jim Beam 1L", "category": "Spirits", "size": "1 Litre", "selling_price": 2600, "buying_price": 2415, "opening_stock": 2},
+
+    # SPIRITS - 750ML
+    {"name": "Black & White 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1500, "buying_price": 1155, "opening_stock": 3},
+    {"name": "Jim Beam 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1700, "buying_price": 2195, "opening_stock": 2},
+    {"name": "Black Label 750ML", "category": "Spirits", "size": "750ML", "selling_price": 3600, "buying_price": 3077, "opening_stock": 3},
+    {"name": "Jameson 750ML", "category": "Spirits", "size": "750ML", "selling_price": 2750, "buying_price": 2268, "opening_stock": 4},
+    {"name": "Jagermeister 750ML", "category": "Spirits", "size": "750ML", "selling_price": 3200, "buying_price": 2365, "opening_stock": 2},
+    {"name": "Red Label 750ML", "category": "Spirits", "size": "750ML", "selling_price": 2000, "buying_price": 1648, "opening_stock": 3},
+    {"name": "Malibu 750ML", "category": "Spirits", "size": "750ML", "selling_price": 2200, "buying_price": 1563, "opening_stock": 3},
+    {"name": "4th Street 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1200, "buying_price": 915, "opening_stock": 3},
+    {"name": "J & B 750ML", "category": "Spirits", "size": "750ML", "selling_price": 2400, "buying_price": 1932, "opening_stock": 1},
+    {"name": "Captain Morgan 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1300, "buying_price": 948, "opening_stock": 5},
+    {"name": "Grants 750ML", "category": "Spirits", "size": "750ML", "selling_price": 2200, "buying_price": 1738, "opening_stock": 6},
+    {"name": "Kibao 750ML", "category": "Spirits", "size": "750ML", "selling_price": 850, "buying_price": 649, "opening_stock": 10},
+    {"name": "Kenya Cane 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1000, "buying_price": 692, "opening_stock": 6},
+    {"name": "Kenya Cane Pineapple 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1000, "buying_price": 692, "opening_stock": 15},
+    {"name": "Smirnoff 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1600, "buying_price": 1277, "opening_stock": 10},
+    {"name": "Kenya King 750ML", "category": "Spirits", "size": "750ML", "selling_price": 800, "buying_price": 616, "opening_stock": 3},
+    {"name": "Jack Daniels 750ML", "category": "Spirits", "size": "750ML", "selling_price": 3500, "buying_price": 3100, "opening_stock": 4},
+    {"name": "Four Cousins 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1200, "buying_price": 920, "opening_stock": 6},
+    {"name": "Famous Grouse 750ML", "category": "Spirits", "size": "750ML", "selling_price": 2500, "buying_price": 1875, "opening_stock": 2},
+    {"name": "Konyagi 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1100, "buying_price": 803, "opening_stock": 8},
+    {"name": "Konyagi 500ML", "category": "Spirits", "size": "500ML", "selling_price": 700, "buying_price": 572, "opening_stock": 10},
+    {"name": "Chrome Gin 750ML", "category": "Spirits", "size": "750ML", "selling_price": 800, "buying_price": 577, "opening_stock": 8},
+    {"name": "Chrome Vodka 750ML", "category": "Spirits", "size": "750ML", "selling_price": 850, "buying_price": 577, "opening_stock": 11},
+    {"name": "Best Whisky 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1100, "buying_price": 922, "opening_stock": 7},
+    {"name": "Best Gin 750ML", "category": "Spirits", "size": "750ML", "selling_price": 950, "buying_price": 743, "opening_stock": 12},
+    {"name": "Origin 750ML", "category": "Spirits", "size": "750ML", "selling_price": 850, "buying_price": 626, "opening_stock": 9},
+    {"name": "Kane Extra 750ML", "category": "Spirits", "size": "750ML", "selling_price": 800, "buying_price": 593, "opening_stock": 4},
+    {"name": "All Seasons 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1300, "buying_price": 1050, "opening_stock": 8},
+    {"name": "VAT 69 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1600, "buying_price": 1442, "opening_stock": 4},
+    {"name": "Hennessy 750ML", "category": "Spirits", "size": "750ML", "selling_price": 6200, "buying_price": 5200, "opening_stock": 1},
+    {"name": "Martell 750ML", "category": "Spirits", "size": "750ML", "selling_price": 5800, "buying_price": 4500, "opening_stock": 1},
+    {"name": "Chivas Regal 750ML", "category": "Spirits", "size": "750ML", "selling_price": 3850, "buying_price": 3682, "opening_stock": 1},
+    {"name": "Ballantines 750ML", "category": "Spirits", "size": "750ML", "selling_price": 2500, "buying_price": 2009, "opening_stock": 3},
+    {"name": "Bacardi 750ML", "category": "Spirits", "size": "750ML", "selling_price": 2000, "buying_price": 1700, "opening_stock": 3},
+    {"name": "Viceroy 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1600, "buying_price": 1265, "opening_stock": 4},
+    {"name": "Richot 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1600, "buying_price": 1277, "opening_stock": 3},
+    {"name": "Gilbeys 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1600, "buying_price": 1277, "opening_stock": 6},
+    {"name": "Bond 7 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1600, "buying_price": 1277, "opening_stock": 3},
+    {"name": "Beefeaters Gin Pink 750ML", "category": "Spirits", "size": "750ML", "selling_price": 3000, "buying_price": 2733, "opening_stock": 2},
+    {"name": "Beefeaters Gin 750ML", "category": "Spirits", "size": "750ML", "selling_price": 3300, "buying_price": 2570, "opening_stock": 2},
+    {"name": "Gordons Gin 750ML", "category": "Spirits", "size": "750ML", "selling_price": 2300, "buying_price": 1977, "opening_stock": 2},
+    {"name": "Hunters Choice 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1300, "buying_price": 922, "opening_stock": 6},
+    {"name": "Caprice White 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1000, "buying_price": 743, "opening_stock": 4},
+    {"name": "Caprice Red 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1000, "buying_price": 743, "opening_stock": 2},
+    {"name": "Absolut Vodka 750ML", "category": "Spirits", "size": "750ML", "selling_price": 2400, "buying_price": 1853, "opening_stock": 2},
+    {"name": "County 750ML", "category": "Spirits", "size": "750ML", "selling_price": 850, "buying_price": 662, "opening_stock": 11},
+    {"name": "Old Monk 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1200, "buying_price": 1050, "opening_stock": 3},
+    {"name": "Robertson Wine 750ML", "category": "Spirits", "size": "750ML", "selling_price": 1200, "buying_price": 1050, "opening_stock": 2},
+    {"name": "General Meakins 750ML", "category": "Spirits", "size": "750ML", "selling_price": 850, "buying_price": 635, "opening_stock": 4},
+
+    # SPIRITS - 350ML
+    {"name": "VAT 69 350ML", "category": "Spirits", "size": "350ML", "selling_price": 1000, "buying_price": 783, "opening_stock": 5},
+    {"name": "All Seasons 350ML", "category": "Spirits", "size": "350ML", "selling_price": 750, "buying_price": 535, "opening_stock": 4},
+    {"name": "Viceroy 350ML", "category": "Spirits", "size": "350ML", "selling_price": 900, "buying_price": 783, "opening_stock": 8},
+    {"name": "Richot 350ML", "category": "Spirits", "size": "350ML", "selling_price": 900, "buying_price": 593, "opening_stock": 5},
+    {"name": "William Lawson 350ML", "category": "Spirits", "size": "350ML", "selling_price": 1000, "buying_price": 759, "opening_stock": 2},
+    {"name": "Kibao 350ML", "category": "Spirits", "size": "350ML", "selling_price": 600, "buying_price": 350, "opening_stock": 10},
+    {"name": "Black & White 350ML", "category": "Spirits", "size": "350ML", "selling_price": 800, "buying_price": 593, "opening_stock": 5},
+    {"name": "Jack Daniels 350ML", "category": "Spirits", "size": "350ML", "selling_price": 2000, "buying_price": 1640, "opening_stock": 1},
+    {"name": "Gilbeys 350ML", "category": "Spirits", "size": "350ML", "selling_price": 800, "buying_price": 593, "opening_stock": 8},
+    {"name": "Smirnoff 350ML", "category": "Spirits", "size": "350ML", "selling_price": 700, "buying_price": 593, "opening_stock": 14},
+    {"name": "Kenya Cane 350ML", "category": "Spirits", "size": "350ML", "selling_price": 650, "buying_price": 363, "opening_stock": 10},
+    {"name": "Jameson 350ML", "category": "Spirits", "size": "350ML", "selling_price": 1500, "buying_price": 1133, "opening_stock": 7},
+    {"name": "Hunters Choice 350ML", "category": "Spirits", "size": "350ML", "selling_price": 650, "buying_price": 437, "opening_stock": 11},
+    {"name": "58 Gin 350ML", "category": "Spirits", "size": "350ML", "selling_price": 800, "buying_price": 366, "opening_stock": 8},
+
+    # SPIRITS - 250ML
+    {"name": "All Seasons 250ML", "category": "Spirits", "size": "250ML", "selling_price": 500, "buying_price": 365, "opening_stock": 10},
+    {"name": "Kenya Cane 250ML", "category": "Spirits", "size": "250ML", "selling_price": 350, "buying_price": 264, "opening_stock": 47},
+    {"name": "Smirnoff 250ML", "category": "Spirits", "size": "250ML", "selling_price": 550, "buying_price": 429, "opening_stock": 15},
+    {"name": "Best Gin 250ML", "category": "Spirits", "size": "250ML", "selling_price": 400, "buying_price": 265, "opening_stock": 18},
+    {"name": "Best Whisky 250ML", "category": "Spirits", "size": "250ML", "selling_price": 450, "buying_price": 318, "opening_stock": 17},
+    {"name": "General Meakins 250ML", "category": "Spirits", "size": "250ML", "selling_price": 300, "buying_price": 217, "opening_stock": 62},
+    {"name": "Blue Ice 250ML", "category": "Spirits", "size": "250ML", "selling_price": 200, "buying_price": 155, "opening_stock": 91.5},
+    {"name": "Origin 250ML", "category": "Spirits", "size": "250ML", "selling_price": 300, "buying_price": 239, "opening_stock": 15.5},
+    {"name": "County 250ML", "category": "Spirits", "size": "250ML", "selling_price": 300, "buying_price": 239, "opening_stock": 65.5},
+    {"name": "Chrome Lemon 250ML", "category": "Spirits", "size": "250ML", "selling_price": 300, "buying_price": 239, "opening_stock": 15},
+    {"name": "Chrome Gin 250ML", "category": "Spirits", "size": "250ML", "selling_price": 300, "buying_price": 214, "opening_stock": 100},
+    {"name": "Best Cream 250ML", "category": "Spirits", "size": "250ML", "selling_price": 500, "buying_price": 326, "opening_stock": 3},
+    {"name": "Napoleon 250ML", "category": "Spirits", "size": "250ML", "selling_price": 300, "buying_price": 217, "opening_stock": 15},
+    {"name": "Konyagi 250ML", "category": "Spirits", "size": "250ML", "selling_price": 350, "buying_price": 286, "opening_stock": 13},
+    {"name": "Hunters Choice 250ML", "category": "Spirits", "size": "250ML", "selling_price": 400, "buying_price": 303, "opening_stock": 19},
+    {"name": "Gilbeys 250ML", "category": "Spirits", "size": "250ML", "selling_price": 550, "buying_price": 429, "opening_stock": 21},
+    {"name": "Triple Ace 250ML", "category": "Spirits", "size": "250ML", "selling_price": 300, "buying_price": 217, "opening_stock": 13.5},
+    {"name": "Viceroy 250ML", "category": "Spirits", "size": "250ML", "selling_price": 550, "buying_price": 443, "opening_stock": 8},
+    {"name": "Richot 250ML", "category": "Spirits", "size": "250ML", "selling_price": 550, "buying_price": 429, "opening_stock": 9},
+    {"name": "Captain Morgan 250ML", "category": "Spirits", "size": "250ML", "selling_price": 450, "buying_price": 346, "opening_stock": 10},
+    {"name": "V&A 250ML", "category": "Spirits", "size": "250ML", "selling_price": 450, "buying_price": 305, "opening_stock": 10},
+    {"name": "White Pearl 250ML", "category": "Spirits", "size": "250ML", "selling_price": 300, "buying_price": 227, "opening_stock": 10},
+    {"name": "Caribia 250ML", "category": "Spirits", "size": "250ML", "selling_price": 350, "buying_price": 230, "opening_stock": 10},
+    {"name": "Liberty 250ML", "category": "Spirits", "size": "250ML", "selling_price": 300, "buying_price": 230, "opening_stock": 6},
+    {"name": "Kibao 250ML", "category": "Spirits", "size": "250ML", "selling_price": 300, "buying_price": 230, "opening_stock": 63.5},
+    {"name": "Kane Extra 250ML", "category": "Spirits", "size": "250ML", "selling_price": 300, "buying_price": 214, "opening_stock": 19},
+    {"name": "Bond 7 250ML", "category": "Spirits", "size": "250ML", "selling_price": 550, "buying_price": 429, "opening_stock": 4},
+
+    # SOFT DRINKS
+    {"name": "Delmonte", "category": "Soft Drinks", "size": "Can/Bottle", "selling_price": 300, "buying_price": 252, "opening_stock": 12},
+    {"name": "Predator", "category": "Soft Drinks", "size": "Can/Bottle", "selling_price": 70, "buying_price": 27, "opening_stock": 31},
+    {"name": "Lemonade", "category": "Soft Drinks", "size": "Can/Bottle", "selling_price": 50, "buying_price": 11, "opening_stock": 22},
+    {"name": "Red Bull", "category": "Soft Drinks", "size": "Can/Bottle", "selling_price": 250, "buying_price": 184, "opening_stock": 2},
+    {"name": "Powerplay", "category": "Soft Drinks", "size": "Can/Bottle", "selling_price": 70, "buying_price": 27, "opening_stock": 25},
+    {"name": "Monster", "category": "Soft Drinks", "size": "Can/Bottle", "selling_price": 300, "buying_price": 252, "opening_stock": 1},
+    {"name": "Soda 1.25L", "category": "Soft Drinks", "size": "1 Litre", "selling_price": 150, "buying_price": 58, "opening_stock": 27},
+    {"name": "Soda 350ML", "category": "Soft Drinks", "size": "350ML", "selling_price": 50, "buying_price": 41, "opening_stock": 102},
+    {"name": "Minute Maid 400ML", "category": "Soft Drinks", "size": "Can/Bottle", "selling_price": 80, "buying_price": 33, "opening_stock": 49},
+    {"name": "Minute Maid 1L", "category": "Soft Drinks", "size": "1 Litre", "selling_price": 150, "buying_price": 125, "opening_stock": 51},
+    {"name": "Water 1L", "category": "Soft Drinks", "size": "1 Litre", "selling_price": 100, "buying_price": 39, "opening_stock": 16},
+    {"name": "Water 500ML", "category": "Soft Drinks", "size": "500ML", "selling_price": 50, "buying_price": 22, "opening_stock": 20},
+    {"name": "Novida", "category": "Soft Drinks", "size": "Can/Bottle", "selling_price": 50, "buying_price": 38, "opening_stock": 2},
+]
+
+# Size definitions
+SIZES = [
+    {"name": "1 Litre", "description": "1 Litre bottles", "sort_order": 1},
+    {"name": "750ML", "description": "750ml bottles", "sort_order": 2},
+    {"name": "500ML", "description": "500ml bottles", "sort_order": 3},
+    {"name": "350ML", "description": "350ml bottles", "sort_order": 4},
+    {"name": "250ML", "description": "250ml bottles/tots", "sort_order": 5},
+    {"name": "Can/Bottle", "description": "Standard can or bottle", "sort_order": 6},
+]
 
 
-def inject_stock_data():
-    """Main function to inject all the stock data"""
+def create_categories():
+    """Create product categories"""
+    print("\n=== Creating Categories ===")
+    categories = {}
 
-    # Create default admin user if not exists
-    admin = User.query.filter_by(username='admin').first()
-    if not admin:
-        admin = User(
-            username='admin',
-            email='admin@mosevines.com',
-            full_name='System Administrator',
-            role='manager'
-        )
-        admin.set_password('admin123')  # Change this password!
-        db.session.add(admin)
-        db.session.commit()
-        print("✓ Created admin user")
+    admin_user = User.query.filter_by(role='admin').first()
+    if not admin_user:
+        print("ERROR: No admin user found!")
+        return categories
 
-    # Create categories
-    categories_data = [
-        ('Beers', 'All types of beer'),
-        ('Spirits 1L', 'Spirits in 1 liter bottles'),
-        ('Spirits 750ML', 'Spirits in 750ml bottles'),
-        ('Spirits 500ML', 'Spirits in 500ml bottles'),
-        ('Spirits 350ML', 'Spirits in 350ml bottles'),
-        ('Spirits 250ML', 'Spirits in 250ml bottles'),
-        ('Soft Drinks', 'Non-alcoholic beverages'),
-        ('Wine', 'Wine products'),
-        ('Miscellaneous', 'Other items like limes, purchases, etc'),
-    ]
+    category_names = set(product['category'] for product in PRODUCTS)
 
-    category_map = {}
-    for name, description in categories_data:
-        category = Category.query.filter_by(name=name).first()
-        if not category:
-            category = Category(name=name, description=description, created_by=admin.id)
+    for cat_name in category_names:
+        existing = Category.query.filter_by(name=cat_name).first()
+        if existing:
+            print(f"✓ Category '{cat_name}' already exists")
+            categories[cat_name] = existing
+        else:
+            category = Category(
+                name=cat_name,
+                description=f"{cat_name} products",
+                is_active=True,
+                created_by=admin_user.id
+            )
             db.session.add(category)
-        category_map[name] = category
+            db.session.flush()
+            categories[cat_name] = category
+            print(f"✓ Created category: {cat_name}")
 
     db.session.commit()
-    print(f"✓ Created/verified {len(categories_data)} categories")
+    return categories
 
-    # Create sizes
-    sizes_data = [
-        ('Full Bottle', 'Full bottle/can', 1),
-        ('Tot', 'Single tot serving', 2),
-    ]
 
-    size_map = {}
-    for name, description, sort_order in sizes_data:
-        size = Size.query.filter_by(name=name).first()
-        if not size:
-            size = Size(name=name, description=description, sort_order=sort_order, created_by=admin.id)
+def create_sizes():
+    """Create product sizes"""
+    print("\n=== Creating Sizes ===")
+    sizes = {}
+
+    admin_user = User.query.filter_by(role='admin').first()
+
+    for size_data in SIZES:
+        existing = Size.query.filter_by(name=size_data['name']).first()
+        if existing:
+            print(f"✓ Size '{size_data['name']}' already exists")
+            sizes[size_data['name']] = existing
+        else:
+            size = Size(
+                name=size_data['name'],
+                description=size_data['description'],
+                sort_order=size_data['sort_order'],
+                is_active=True,
+                created_by=admin_user.id
+            )
             db.session.add(size)
-        size_map[name] = size
+            db.session.flush()
+            sizes[size_data['name']] = size
+            print(f"✓ Created size: {size_data['name']}")
 
     db.session.commit()
-    print(f"✓ Created/verified {len(sizes_data)} sizes")
+    return sizes
 
-    # Stock data from the PDF (7/8/2025)
-    stock_date = date(2025, 8, 7)
 
-    # Products data extracted from the PDF
-    products_data = [
-        # Format: (name, category, base_unit, buying_price, current_stock, min_stock, selling_price)
+def import_products(categories, sizes):
+    """Import all products with one variant each (the bottle itself)"""
+    print("\n=== Importing Products ===")
 
-        # BEERS (from PDF)
-        ('Snapp', 'Beers', 'bottle', 181, 0, 5, 250),
-        ('Guarana', 'Beers', 'bottle', 181, 23, 5, 250),
-        ('Black Ice', 'Beers', 'bottle', 181, 22, 5, 250),
-        ('Pineapple Punch', 'Beers', 'bottle', 181, 19, 5, 250),
-        ('Tusker Malt', 'Beers', 'bottle', 247, 0, 5, 250),
-        ('Heineken', 'Beers', 'bottle', 287, 0, 5, 350),
-        ('Tusker Lager', 'Beers', 'bottle', 203, 21, 5, 300),
-        ('Faxe', 'Beers', 'bottle', 263, 9, 5, 320),
-        ('Martens Beer', 'Beers', 'bottle', 263, 5, 5, 320),
-        ('Tusker Lite', 'Beers', 'bottle', 247, 0, 5, 250),
-        ('Guinness', 'Beers', 'bottle', 220, 22, 5, 300),  # 23-1 sale = 22
-        ('Kingfisher', 'Beers', 'bottle', 192, 0, 5, 250),
-        ('Hunters Gold', 'Beers', 'bottle', 203, 0, 5, 250),
-        ('Balozi', 'Beers', 'bottle', 203, 18, 5, 300),
-        ('Pilsner', 'Beers', 'bottle', 203, 0, 5, 300),
-        ('Whitecap', 'Beers', 'bottle', 220, 17, 5, 300),
-        ('Savannah', 'Beers', 'bottle', 240, 0, 5, 200),
-        ('KO', 'Beers', 'bottle', 220, 3, 5, 300),
-        ('Tusker Cider', 'Beers', 'bottle', 241, 19, 5, 300),
-        ('Banana Beer', 'Beers', 'bottle', 72, 43, 5, 150),
+    admin_user = User.query.filter_by(role='admin').first()
+    stats = {
+        'products_created': 0,
+        'products_skipped': 0,
+        'variants_created': 0,
+        'variants_skipped': 0
+    }
 
-        # 1 LITRE SPIRITS
-        ('Flirt Vodka', 'Spirits 1L', 'bottle', 1030, 1, 2, 1700),
-        ('Ballantines', 'Spirits 1L', 'bottle', 2679, 2, 2, 3600),
-        ('Double Black', 'Spirits 1L', 'bottle', 5550, 2, 2, 6800),
-        ('J & B', 'Spirits 1L', 'bottle', 2017, 2, 2, 2700),
-        ('Red Label', 'Spirits 1L', 'bottle', 2050, 3, 2, 2700),
-        ('Black Label', 'Spirits 1L', 'bottle', 3810, 4, 2, 4500),
-        ('Black & White', 'Spirits 1L', 'bottle', 1525, 4, 2, 2000),
-        ('Jagermeister', 'Spirits 1L', 'bottle', 3100, 2, 2, 3700),
-        ('Jameson', 'Spirits 1L', 'bottle', 3024, 3, 2, 3350),
-        ('Gordons', 'Spirits 1L', 'bottle', 2348, 0, 2, 2348),
-        ('Jack Daniels', 'Spirits 1L', 'bottle', 3850, 3, 2, 4500),
-        ('Baileys Original', 'Spirits 1L', 'bottle', 2720, 0, 2, 3600),
-        ('Captain Morgan Spiced', 'Spirits 1L', 'bottle', 2184, 6, 2, 2500),
-        ('Captain Morgan Gold', 'Spirits 1L', 'bottle', 2184, 0, 2, 2500),
-        ('Malibu', 'Spirits 1L', 'bottle', 1575, 2, 2, 2500),
-        ('Absolut Vodka', 'Spirits 1L', 'bottle', 2577, 0, 2, 2577),
-        ('4th Street 1.5L', 'Spirits 1L', 'bottle', 1680, 1, 2, 2000),
-        ('Jim Beam', 'Spirits 1L', 'bottle', 2415, 2, 2, 2600),
+    for product_data in PRODUCTS:
+        product_name = product_data['name']
+        category = categories[product_data['category']]
+        size = sizes[product_data['size']]
 
-        # 750ML SPIRITS
-        ('Black & White 750ML', 'Spirits 750ML', 'bottle', 1155, 3, 2, 1500),
-        ('Jim Beam 750ML', 'Spirits 750ML', 'bottle', 2195, 2, 2, 1700),
-        ('Black Label 750ML', 'Spirits 750ML', 'bottle', 3077, 3, 2, 3600),
-        ('Baileys Original 750ML', 'Spirits 750ML', 'bottle', 2225, 0, 2, 2600),
-        ('Jameson 750ML', 'Spirits 750ML', 'bottle', 2268, 4, 2, 2750),
-        ('Jagermeister 750ML', 'Spirits 750ML', 'bottle', 2365, 2, 2, 3200),
-        ('Red Label 750ML', 'Spirits 750ML', 'bottle', 1648, 3, 2, 2700),
-        ('Malibu 750ML', 'Spirits 750ML', 'bottle', 1563, 3, 2, 2200),
-        ('4th Street 750ML', 'Spirits 750ML', 'bottle', 915, 3, 2, 1200),
-        ('J & B 750ML', 'Spirits 750ML', 'bottle', 1932, 1, 2, 2400),
-        ('Captain Morgan 750ML', 'Spirits 750ML', 'bottle', 948, 5, 2, 1300),
-        ('Grants 750ML', 'Spirits 750ML', 'bottle', 1738, 6, 2, 2200),
-        ('Kibao 750ML', 'Spirits 750ML', 'bottle', 649, 9, 2, 850),
-        ('Kenya Cane 750ML', 'Spirits 750ML', 'bottle', 692, 5, 2, 1000),
-        ('Kenya Cane Pineapple 750ML', 'Spirits 750ML', 'bottle', 692, 17, 2, 1000),
-        ('Smirnoff 750ML', 'Spirits 750ML', 'bottle', 1277, 10, 2, 1600),
-        ('Kenya King', 'Spirits 750ML', 'bottle', 616, 3, 2, 800),
-        ('Jack Daniels 750ML', 'Spirits 750ML', 'bottle', 3100, 4, 2, 3500),
-        ('Four Cousins', 'Wine', 'bottle', 920, 6, 2, 1200),
-        ('Famous Grouse', 'Spirits 750ML', 'bottle', 1875, 2, 2, 2500),
-        ('Konyagi 750ML', 'Spirits 750ML', 'bottle', 803, 8, 2, 1100),
+        # Check if product exists
+        existing_product = Product.query.filter_by(name=product_name).first()
 
-        # 500ML SPIRITS
-        ('Konyagi 500ML', 'Spirits 500ML', 'bottle', 572, 9, 2, 700),
-        ('Chrome Gin 500ML', 'Spirits 500ML', 'bottle', 577, 8, 2, 850),
-        ('Chrome Vodka 500ML', 'Spirits 500ML', 'bottle', 577, 8, 2, 800),
-        ('Best Whisky 500ML', 'Spirits 500ML', 'bottle', 922, 8, 2, 1100),
-        ('Best Gin 500ML', 'Spirits 500ML', 'bottle', 743, 12, 2, 950),
-        ('Best Cream 500ML', 'Spirits 500ML', 'bottle', 999, 0, 2, 1200),
-        ('Origin 500ML', 'Spirits 500ML', 'bottle', 626, 7, 2, 850),
-        ('Kane Extra 500ML', 'Spirits 500ML', 'bottle', 593, 4, 2, 850),
-        ('All Seasons 500ML', 'Spirits 500ML', 'bottle', 1050, 8, 2, 1300),
-        ('VAT 69 500ML', 'Spirits 500ML', 'bottle', 1442, 4, 2, 1600),
-        ('Chamdor', 'Wine', 'bottle', 747, 0, 2, 1000),
-        ('Hennessy', 'Spirits 500ML', 'bottle', 5200, 1, 1, 6000),
-        ('Martell', 'Spirits 500ML', 'bottle', 4500, 1, 1, 5800),
-        ('Amarulla 500ML', 'Spirits 500ML', 'bottle', 2060, 0, 2, 2200),
-        ('Chivas Regal', 'Spirits 500ML', 'bottle', 3682, 1, 1, 3850),
-        ('Ballantines 500ML', 'Spirits 500ML', 'bottle', 2009, 3, 2, 2500),
-        ('Bacardi', 'Spirits 500ML', 'bottle', 1700, 3, 2, 2000),
-        ('Viceroy 500ML', 'Spirits 500ML', 'bottle', 1265, 4, 2, 1600),
-        ('Drostdy Hof', 'Wine', 'bottle', 930, 2, 2, 1200),
-        ('Richot 500ML', 'Spirits 500ML', 'bottle', 1277, 2, 2, 1600),
-        ('Gilbeys 500ML', 'Spirits 500ML', 'bottle', 1277, 7, 2, 1600),
-        ('Bond 7 500ML', 'Spirits 500ML', 'bottle', 1277, 3, 2, 1600),
-        ('Beefeaters Gin Pink', 'Spirits 500ML', 'bottle', 2733, 2, 1, 3000),
-        ('Beefeaters Gin', 'Spirits 500ML', 'bottle', 2570, 2, 1, 3300),
-        ('Gordons Gin Pink', 'Spirits 500ML', 'bottle', 1895, 0, 2, 2200),
-        ('Gordons Gin 500ML', 'Spirits 500ML', 'bottle', 1977, 2, 2, 2300),
-        ('Hunters Choice 500ML', 'Spirits 500ML', 'bottle', 922, 6, 2, 1300),
-        ('Caprice White', 'Wine', 'bottle', 743, 4, 2, 1000),
-        ('Caprice Red', 'Wine', 'bottle', 743, 2, 2, 1000),
-        ('Casabuena White', 'Wine', 'bottle', 711, 0, 2, 1000),
-        ('Casabuena Red', 'Wine', 'bottle', 711, 0, 2, 1000),
-        ('Absolut Vodka 500ML', 'Spirits 500ML', 'bottle', 1853, 2, 2, 2400),
-        ('County 500ML', 'Spirits 500ML', 'bottle', 662, 13, 5, 850),
-        ('Old Munk 500ML', 'Spirits 500ML', 'bottle', 1050, 3, 2, 1200),
-        ('Robertson Wine', 'Wine', 'bottle', 1050, 2, 2, 1200),
-        ('General Meakins 500ML', 'Spirits 500ML', 'bottle', 635, 5, 5, 850),
-
-        # 350ML SPIRITS
-        ('VAT 69 350ML', 'Spirits 350ML', 'bottle', 783, 5, 5, 1000),
-        ('Amarulla 350ML', 'Spirits 350ML', 'bottle', 1185, 0, 2, 1200),
-        ('All Seasons 350ML', 'Spirits 350ML', 'bottle', 535, 4, 5, 750),
-        ('Viceroy 350ML', 'Spirits 350ML', 'bottle', 783, 7, 5, 900),
-        ('Grants 350ML', 'Spirits 350ML', 'bottle', 885, 0, 2, 1000),
-        ('Richot 350ML', 'Spirits 350ML', 'bottle', 593, 5, 5, 900),
-        ('William Lawson', 'Spirits 350ML', 'bottle', 759, 2, 2, 1000),
-        ('Kibao 350ML', 'Spirits 350ML', 'bottle', 350, 10, 10, 600),
-        ('Black & White 350ML', 'Spirits 350ML', 'bottle', 593, 5, 5, 800),
-        ('Jack Daniels 350ML', 'Spirits 350ML', 'bottle', 1640, 1, 1, 2000),
-        ('Gilbeys 350ML', 'Spirits 350ML', 'bottle', 593, 8, 5, 800),
-        ('Smirnoff 350ML', 'Spirits 350ML', 'bottle', 593, 14, 5, 700),
-        ('Kenya Cane Pineapple 350ML', 'Spirits 350ML', 'bottle', 450, 0, 5, 450),
-        ('Kenya Cane 350ML', 'Spirits 350ML', 'bottle', 363, 10, 10, 600),
-        ('Jameson 350ML', 'Spirits 350ML', 'bottle', 1133, 7, 2, 1400),
-        ('Hunters Choice 350ML', 'Spirits 350ML', 'bottle', 437, 12, 5, 650),
-        ('58 Gin', 'Spirits 350ML', 'bottle', 366, 8, 5, 800),
-
-        # 250ML SPIRITS - These have detailed stock from PDF
-        ('All Seasons 250ML', 'Spirits 250ML', 'bottle', 365, 10, 10, 500),
-        ('Kenya Cane 250ML', 'Spirits 250ML', 'bottle', 264, 59, 20, 350),  # 62-3 sales = 59
-        ('Kenya Cane Pineapple 250ML', 'Spirits 250ML', 'bottle', 264, 0, 10, 380),
-        ('Smirnoff 250ML', 'Spirits 250ML', 'bottle', 429, 15, 10, 550),
-        ('Best Gin 250ML', 'Spirits 250ML', 'bottle', 265, 18, 10, 350),
-        ('Best Whisky 250ML', 'Spirits 250ML', 'bottle', 318, 16, 10, 450),  # 17-1 sale = 16
-        ('General Meakins 250ML', 'Spirits 250ML', 'bottle', 217, 62, 20, 300),  # 62.5-0.5 sale = 62
-        ('Blue Ice 250ML', 'Spirits 250ML', 'bottle', 155, 124.5, 30, 200),  # 138.5-14 sales = 124.5
-        ('Origin 250ML', 'Spirits 250ML', 'bottle', 239, 9, 10, 300),  # 9.5-0.5 sale = 9
-        ('County 250ML', 'Spirits 250ML', 'bottle', 239, 29, 20, 300),  # 44.5-15.5 sales = 29
-        ('Chrome Lemon', 'Spirits 250ML', 'bottle', 239, 15, 10, 300),
-        ('Chrome Gin 250ML', 'Spirits 250ML', 'bottle', 214, 111.5, 30, 300),  # 116-4.5 sales = 111.5
-        ('Best Cream 250ML', 'Spirits 250ML', 'bottle', 326, 4, 5, 500),
-        ('Napoleon', 'Spirits 250ML', 'bottle', 217, 15.5, 10, 300),
-        ('Konyagi 250ML', 'Spirits 250ML', 'bottle', 286, 16, 10, 350),
-        ('Hunters Choice 250ML', 'Spirits 250ML', 'bottle', 303, 20, 10, 400),
-        ('Gilbeys 250ML', 'Spirits 250ML', 'bottle', 429, 21, 10, 550),
-        ('Triple Ace', 'Spirits 250ML', 'bottle', 217, 13.5, 10, 300),
-        ('Viceroy 250ML', 'Spirits 250ML', 'bottle', 443, 7, 5, 550),
-        ('VAT 69 250ML', 'Spirits 250ML', 'bottle', 305, 0, 5, 600),
-        ('Richot 250ML', 'Spirits 250ML', 'bottle', 429, 4, 5, 550),
-        ('Captain Morgan 250ML', 'Spirits 250ML', 'bottle', 346, 10, 5, 450),
-        ('V&A', 'Spirits 250ML', 'bottle', 305, 10, 5, 450),
-        ('White Pearl', 'Spirits 250ML', 'bottle', 227, 6.5, 10, 300),  # 7-0.5 sale = 6.5
-        ('Kibao 250ML', 'Spirits 250ML', 'bottle', 230, 57.5, 20, 300),  # 62-4.5 sales = 57.5
-        ('Kane Extra 250ML', 'Spirits 250ML', 'bottle', 214, 20.5, 10, 300),
-        ('Bond 7 250ML', 'Spirits 250ML', 'bottle', 429, 3, 5, 550),
-
-        # SOFT DRINKS
-        ('Delmonte', 'Soft Drinks', 'bottle', 252, 14, 10, 350),
-        ('Predator', 'Soft Drinks', 'bottle', 27, 30, 20, 70),  # 31-1 sale = 30
-        ('Lemonade', 'Soft Drinks', 'bottle', 11, 28, 20, 50),  # 29-1 sale = 28
-        ('Redbull', 'Soft Drinks', 'can', 184, 5, 5, 250),
-        ('Powerplay', 'Soft Drinks', 'bottle', 27, 21, 20, 70),  # 23-2 sales = 21
-        ('Monster', 'Soft Drinks', 'can', 252, 3, 5, 300),
-        ('Soda 2L', 'Soft Drinks', 'bottle', 158, 0, 5, 200),
-        ('Soda 1L', 'Soft Drinks', 'bottle', 158, 0, 10, 100),
-        ('Soda 1.25L', 'Soft Drinks', 'bottle', 58, 26, 20, 150),
-        ('Soda 500ML', 'Soft Drinks', 'bottle', 38, 0, 20, 50),
-        ('Soda 350ML', 'Soft Drinks', 'bottle', 41, 53, 30, 50),
-        ('Minute Maid 400ML', 'Soft Drinks', 'bottle', 33, 38, 30, 80),
-        ('Minute Maid 1L', 'Soft Drinks', 'bottle', 125, 39, 20, 150),
-        ('Water 1L', 'Soft Drinks', 'bottle', 39, 20, 20, 100),
-        ('Water 500ML', 'Soft Drinks', 'bottle', 22, 25, 30, 50),
-        ('Novida', 'Soft Drinks', 'bottle', 38, 1, 10, 50),
-        ('Lime', 'Miscellaneous', 'piece', 10, 29, 20, 20),  # Started 32, sold 3 first, then more later
-
-        # THE MISSING ITEMS - "tots" section and other items
-        ('County 750ML', 'Spirits 750ML', 'bottle', 662, 3, 5, 850),  # This is where the tots came from
-        ('Old Munk Purchase', 'Miscellaneous', 'bottle', 1100, 3, 2, 1200),  # The purchase entry
-    ]
-
-    # Create products and variants
-    product_count = 0
-    variant_count = 0
-
-    for product_data in products_data:
-        name, category_name, base_unit, buying_price, current_stock, min_stock, selling_price = product_data
-
-        # Get or create product
-        product = Product.query.filter_by(name=name).first()
-        if not product:
+        if existing_product:
+            print(f"  ⊘ Product '{product_name}' already exists")
+            product = existing_product
+            stats['products_skipped'] += 1
+        else:
+            # Create new product
             product = Product(
-                name=name,
-                category_id=category_map[category_name].id,
-                base_unit=base_unit,
-                base_buying_price=buying_price,
-                current_stock=current_stock,
-                min_stock_level=min_stock,
-                created_by=admin.id
+                name=product_name,
+                category_id=category.id,
+                base_unit='bottle',
+                base_buying_price=product_data['buying_price'],
+                current_stock=product_data['opening_stock'],
+                min_stock_level=5,  # Default minimum stock
+                created_by=admin_user.id
             )
             db.session.add(product)
-            product_count += 1
-        else:
-            # Update stock if product exists
-            product.current_stock = current_stock
-            product.base_buying_price = buying_price
+            db.session.flush()  # Get product ID
+            stats['products_created'] += 1
+            print(f"  ✓ Created product: {product_name} (Stock: {product_data['opening_stock']})")
 
-        db.session.flush()  # Flush to get the product ID
-
-        # Create product variant for full bottle/can/piece
+        # Create ONE variant for the bottle itself (1 bottle = 1 unit)
         existing_variant = ProductVariant.query.filter_by(
             product_id=product.id,
-            size_id=size_map['Full Bottle'].id
+            size_id=size.id
         ).first()
 
-        if not existing_variant:
-            full_bottle_variant = ProductVariant(
-                product_id=product.id,
-                size_id=size_map['Full Bottle'].id,
-                selling_price=selling_price,
-                conversion_factor=1.0,  # 1 variant = 1 base unit
-                created_by=admin.id
-            )
-            db.session.add(full_bottle_variant)
-            variant_count += 1
+        if existing_variant:
+            print(f"    ⊘ Bottle variant already exists")
+            stats['variants_skipped'] += 1
         else:
-            existing_variant.selling_price = selling_price
-
-    db.session.commit()
-
-    # NOW ADD THE TOTS - County 750ML should have tots available
-    county_750ml = Product.query.filter_by(name='County 750ML').first()
-    if county_750ml:
-        # Check if tot variant already exists
-        existing_tot_variant = ProductVariant.query.filter_by(
-            product_id=county_750ml.id,
-            size_id=size_map['Tot'].id
-        ).first()
-
-        if not existing_tot_variant:
-            # Create tot variant for County 750ML
-            tot_variant = ProductVariant(
-                product_id=county_750ml.id,
-                size_id=size_map['Tot'].id,
-                selling_price=10,  # Based on PDF tots pricing
-                conversion_factor=0.04,  # 1 tot = 1/25 of bottle (25 tots per bottle approx)
-                created_by=admin.id
-            )
-            db.session.add(tot_variant)
-            variant_count += 1
-            db.session.commit()
-
-    print(f"✓ Created/updated {product_count} products")
-    print(f"✓ Created/updated {variant_count} product variants")
-    print("✓ Added tots variant for County 750ML")
-
-    # Record the sales that happened on 7/8/2025
-    sales_data = [
-        # (product_name, size_name, quantity, unit_price, attendant_name)
-        ('Guinness', 'Full Bottle', 1, 300, 'Shop Attendant'),
-        ('Kenya Cane 250ML', 'Full Bottle', 3, 350, 'Shop Attendant'),
-        ('Best Whisky 250ML', 'Full Bottle', 1, 450, 'Shop Attendant'),
-        ('General Meakins 250ML', 'Full Bottle', 0.5, 300, 'Shop Attendant'),
-        ('Blue Ice 250ML', 'Full Bottle', 14, 200, 'Shop Attendant'),
-        ('Origin 250ML', 'Full Bottle', 0.5, 300, 'Shop Attendant'),
-        ('County 250ML', 'Full Bottle', 15.5, 300, 'Shop Attendant'),
-        ('Chrome Gin 250ML', 'Full Bottle', 4.5, 300, 'Shop Attendant'),
-        ('White Pearl', 'Full Bottle', 0.5, 300, 'Shop Attendant'),
-        ('Kibao 250ML', 'Full Bottle', 4.5, 300, 'Shop Attendant'),
-        ('Predator', 'Full Bottle', 1, 70, 'Shop Attendant'),
-        ('Lemonade', 'Full Bottle', 1, 50, 'Shop Attendant'),
-        ('Powerplay', 'Full Bottle', 2, 70, 'Shop Attendant'),
-        ('Lime', 'Full Bottle', 3, 20, 'Shop Attendant'),  # First 3 sold
-        # The tots sales - 50 tots sold from County 750ML
-        ('County 750ML', 'Tot', 50, 10, 'Shop Attendant'),  # 50 tots sold
-    ]
-
-    sales_count = 0
-    total_sales_amount = 0
-
-    for product_name, size_name, quantity, unit_price, attendant_name in sales_data:
-        # Find variant
-        product = Product.query.filter_by(name=product_name).first()
-        size = Size.query.filter_by(name=size_name).first()
-
-        if product and size:
-            variant = ProductVariant.query.filter_by(
+            variant = ProductVariant(
                 product_id=product.id,
-                size_id=size.id
-            ).first()
-
-            if variant:
-                sale_amount = quantity * unit_price
-                sale = Sale(
-                    variant_id=variant.id,
-                    attendant_id=admin.id,  # Using admin as default attendant
-                    quantity=quantity,
-                    unit_price=unit_price,
-                    original_amount=sale_amount,
-                    discount_type='none',
-                    discount_value=0,
-                    discount_amount=0,
-                    total_amount=sale_amount,
-                    cash_amount=sale_amount,
-                    mpesa_amount=0,
-                    credit_amount=0,
-                    sale_date=stock_date,
-                    payment_method='cash'
-                )
-                sale.calculate_discount()
-                db.session.add(sale)
-                sales_count += 1
-                total_sales_amount += sale_amount
-
-                # Update product stock
-                product.reduce_stock(quantity * variant.conversion_factor)
-            else:
-                print(f"⚠️  Warning: Could not find variant for {product_name} - {size_name}")
-        else:
-            print(f"⚠️  Warning: Could not find product '{product_name}' or size '{size_name}'")
+                size_id=size.id,
+                selling_price=product_data['selling_price'],
+                conversion_factor=1.0,  # 1 bottle = 1 bottle (base unit)
+                is_active=True,
+                created_by=admin_user.id
+            )
+            db.session.add(variant)
+            stats['variants_created'] += 1
+            print(f"    ✓ Created bottle variant: {size.name} @ KES {product_data['selling_price']}")
 
     db.session.commit()
-    print(f"✓ Created {sales_count} sales records")
-    print(f"✓ Total sales amount: KES {total_sales_amount:,.2f}")
+    return stats
 
-    # Create daily stock records for all products
-    products = Product.query.all()
-    daily_stock_count = 0
 
-    for product in products:
-        existing_daily_stock = DailyStock.query.filter_by(
-            product_id=product.id,
-            date=stock_date
-        ).first()
+def print_summary(stats):
+    """Print import summary"""
+    print("\n" + "="*60)
+    print("IMPORT SUMMARY")
+    print("="*60)
+    print(f"Products Created:  {stats['products_created']}")
+    print(f"Products Skipped:  {stats['products_skipped']}")
+    print(f"Variants Created:  {stats['variants_created']} (bottle variants only)")
+    print(f"Variants Skipped:  {stats['variants_skipped']}")
+    print("="*60)
+    print("\n📝 NOTE: Only bottle variants have been created.")
+    print("   You can now manually add tot/glass variants as needed.")
+    print("="*60)
 
-        if not existing_daily_stock:
-            # Calculate sales for this product on this date
-            product_sales_query = db.session.query(db.func.sum(Sale.quantity * ProductVariant.conversion_factor)) \
-                .join(ProductVariant, Sale.variant_id == ProductVariant.id) \
-                .filter(
-                ProductVariant.product_id == product.id,
-                Sale.sale_date == stock_date
-            )
-            product_sales = product_sales_query.scalar() or 0
 
-            daily_stock = DailyStock(
-                product_id=product.id,
-                date=stock_date,
-                opening_stock=product.current_stock + product_sales,  # Back-calculate opening stock
-                additions=0,
-                sales_quantity=product_sales,
-                closing_stock=product.current_stock,
-                updated_by=admin.id
-            )
-            db.session.add(daily_stock)
-            daily_stock_count += 1
+def main():
+    """Main import function"""
+    print("="*60)
+    print("MOSEVINES LIQUOR STORE - STOCK IMPORT")
+    print("="*60)
+    print("\nThis script will:")
+    print("- Create categories (Beers, Spirits, Soft Drinks)")
+    print("- Create sizes (1L, 750ML, 500ML, 350ML, 250ML, Can/Bottle)")
+    print("- Import all products with their bottle size as separate products")
+    print("- Create ONE variant per product (the bottle itself)")
+    print("- You can add tot/glass variants manually later")
+    print("="*60)
 
-    db.session.commit()
-    print(f"✓ Created {daily_stock_count} daily stock records")
+    with app.app_context():
+        try:
+            # Create categories
+            categories = create_categories()
 
-    # Create default expense category
-    expense_cat = ExpenseCategory.query.filter_by(name='General').first()
-    if not expense_cat:
-        expense_cat = ExpenseCategory(
-            name='General',
-            description='General business expenses',
-            created_by=admin.id
-        )
-        db.session.add(expense_cat)
-        db.session.commit()
-        print("✓ Created expense category")
+            # Create sizes
+            sizes = create_sizes()
 
-    # Add some key summary info from the PDF
-    print("\n" + "=" * 60)
-    print("📊 STOCK SHEET SUMMARY (7/8/2025)")
-    print("=" * 60)
+            # Import products and variants
+            stats = import_products(categories, sizes)
 
-    # Total inventory value
-    total_buying_value = db.session.query(
-        db.func.sum(Product.current_stock * Product.base_buying_price)
-    ).scalar() or 0
+            # Print summary
+            print_summary(stats)
 
-    # Calculate selling value properly
-    selling_value_query = db.session.query(
-        db.func.sum(Product.current_stock * ProductVariant.selling_price)
-    ).join(ProductVariant, Product.id == ProductVariant.product_id) \
-        .filter(ProductVariant.conversion_factor == 1.0)
-    total_selling_value = selling_value_query.scalar() or 0
+            print("\n✅ Import completed successfully!")
+            print("\n💡 Next steps:")
+            print("   1. Login to the system")
+            print("   2. Go to Products → Product Variants")
+            print("   3. Add tot/glass variants for spirits as needed")
+            print("   4. Set conversion factors (e.g., 1 bottle = 40 tots)")
 
-    print(f"Total Buying Value: KES {total_buying_value:,.2f}")
-    print(f"Total Selling Value: KES {total_selling_value:,.2f}")
-    if total_selling_value > 0:
-        print(f"Potential Profit: KES {total_selling_value - total_buying_value:,.2f}")
-
-    # Sales summary from PDF
-    print(f"\nSALES RECORDED: KES {total_sales_amount:,.2f}")
-    print("PAYBILL: 8,970")  # From PDF
-    print("CASH: 4,000")  # From PDF
-    print("CREDIT: -")  # From PDF
-    print("TOTAL: 12,970")  # From PDF - this doesn't match our calculated sales
-
-    # Stock status
-    total_products = Product.query.count()
-    zero_stock = Product.query.filter(Product.current_stock <= 0).count()
-    low_stock = Product.query.filter(
-        Product.current_stock > 0,
-        Product.current_stock <= Product.min_stock_level
-    ).count()
-
-    print(f"\nSTOCK STATUS:")
-    print(f"Total Products: {total_products}")
-    print(f"Out of Stock: {zero_stock}")
-    print(f"Low Stock: {low_stock}")
-    print(f"Good Stock: {total_products - zero_stock - low_stock}")
-
-    # Show some low stock items
-    low_stock_items = Product.query.filter(
-        Product.current_stock > 0,
-        Product.current_stock <= Product.min_stock_level
-    ).limit(10).all()
-
-    if low_stock_items:
-        print(f"\nLOW STOCK ALERTS:")
-        for item in low_stock_items:
-            print(f"⚠️  {item.name}: {item.current_stock} {item.base_unit}s (min: {item.min_stock_level})")
-
-    # Show out of stock items
-    out_of_stock = Product.query.filter(Product.current_stock <= 0).limit(10).all()
-    if out_of_stock:
-        print(f"\nOUT OF STOCK:")
-        for item in out_of_stock:
-            print(f"❌ {item.name}")
-
-    print("\n" + "=" * 60)
-    print("✅ DATA INJECTION COMPLETED SUCCESSFULLY!")
-    print("=" * 60)
-    print("\n🔐 Default Admin Credentials:")
-    print("   Username: admin")
-    print("   Password: admin123")
-    print("   ⚠️  CHANGE THE PASSWORD IMMEDIATELY!")
-
-    print("\n📝 Notes from PDF:")
-    print("- Sales total in PDF shows 12,970 but individual sales don't add up")
-    print("- Paybill: 8,970, Cash: 4,000 from PDF")
-    print("- Some items like tissue, police, tumbler mentioned as purchases")
-    print("- County 750ML was used to make tots (50 tots sold)")
-    print("- Lime stock calculations: complex due to multiple transactions")
-    print(f"- Script recorded {sales_count} individual sales totaling KES {total_sales_amount:,.2f}")
+        except Exception as e:
+            db.session.rollback()
+            print(f"\n❌ Error during import: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
 
 if __name__ == '__main__':
-    # Create Flask app and database tables
-    app = create_app()
-
-    with app.app_context():
-        # Create all database tables
-        db.create_all()
-        print("✓ Database tables created/verified")
-
-        try:
-            # Inject the data
-            inject_stock_data()
-
-        except Exception as e:
-            print(f"❌ Error during data injection: {str(e)}")
-            import traceback
-
-            traceback.print_exc()
-            db.session.rollback()
-            raise
-        finally:
-            db.session.close()
+    main()

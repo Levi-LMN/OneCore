@@ -266,6 +266,7 @@ def login():
     if request.method == 'POST':
         email = request.form['email'].strip().lower()
         password = request.form['password']
+        remember = request.form.get('remember') == 'on'
 
         user = User.query.filter_by(email=email, is_active=True).first()
 
@@ -278,13 +279,22 @@ def login():
                 'user_email': user.email
             })
 
+            # Set session to be permanent if "Remember Me" is checked
+            if remember:
+                session.permanent = True
+                # Set session lifetime to 30 days (configurable)
+                app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+            else:
+                session.permanent = False
+
             user.last_login = datetime.now(timezone.utc)
 
             create_audit_log(
                 action='LOGIN',
                 table_name='user',
                 record_id=user.id,
-                changes_summary=f"User {user.full_name} logged in successfully"
+                changes_summary=f"User {user.full_name} logged in successfully" +
+                               (" (Remember Me enabled)" if remember else "")
             )
 
             db.session.commit()
@@ -294,7 +304,6 @@ def login():
             flash('Invalid email or password', 'error')
 
     return render_template('login.html')
-
 
 @app.route('/logout')
 def logout():
@@ -1544,8 +1553,6 @@ def delete_variant(variant_id):
     return redirect(url_for('product_variants', product_id=product_id))
 
 
-
-
 # SALES ROUTES
 @app.route('/sales')
 @login_required
@@ -1555,6 +1562,9 @@ def sales():
         selected_date = datetime.strptime(selected_date_str, '%Y-%m-%d').date()
     except ValueError:
         selected_date = date.today()
+
+    # Check if a specific date was requested (not today)
+    stick_to_date = selected_date_str != date.today().strftime('%Y-%m-%d')
 
     current_user = get_current_user()
 
@@ -1589,11 +1599,11 @@ def sales():
         .join(Category, Product.category_id == Category.id) \
         .join(Size, ProductVariant.size_id == Size.id) \
         .filter(
-            ProductVariant.is_active == True,
-            Product.current_stock > 0,
-            Category.is_active == True,
-            Size.is_active == True
-        ).order_by(Category.name, Product.name, Size.sort_order).all()
+        ProductVariant.is_active == True,
+        Product.current_stock > 0,
+        Category.is_active == True,
+        Size.is_active == True
+    ).order_by(Category.name, Product.name, Size.sort_order).all()
 
     today = date.today()
 
@@ -1601,6 +1611,7 @@ def sales():
         'sales/sales.html',
         sales_data=sales_data,
         selected_date=selected_date,
+        stick_to_date=stick_to_date,
         total_original=totals['original'],
         total_discount=totals['discount'],
         total_sales=totals['sales'],
@@ -1616,6 +1627,9 @@ def sales():
 def add_sale():
     try:
         current_user = get_current_user()
+
+        # Check if we should return to a specific date
+        return_date = request.form.get('return_date')
 
         # Extract form data
         variant_id = int(request.form.get('variant_id'))
@@ -1638,26 +1652,30 @@ def add_sale():
         # Validate required fields
         if quantity <= 0 or unit_price <= 0:
             flash('Please fill in all required fields correctly.', 'error')
-            return redirect(url_for('sales'))
+            redirect_date = return_date if return_date else date.today().strftime('%Y-%m-%d')
+            return redirect(url_for('sales', date=redirect_date))
 
         # Parse sale date
         try:
             sale_date = datetime.strptime(sale_date_str, '%Y-%m-%d').date()
         except (ValueError, TypeError):
             flash('Invalid sale date format.', 'error')
-            return redirect(url_for('sales'))
+            redirect_date = return_date if return_date else date.today().strftime('%Y-%m-%d')
+            return redirect(url_for('sales', date=redirect_date))
 
         # Get variant
         variant = db.session.get(ProductVariant, variant_id)
         if not variant or not variant.is_active:
             flash('Selected product variant not found or inactive.', 'error')
-            return redirect(url_for('sales'))
+            redirect_date = return_date if return_date else date.today().strftime('%Y-%m-%d')
+            return redirect(url_for('sales', date=redirect_date))
 
         # Check if we can sell the requested quantity
         if not variant.can_sell_quantity(quantity):
             available = variant.get_available_stock_in_variant_units()
             flash(f'Insufficient stock! Only {available} units of {variant.get_display_name()} available.', 'error')
-            return redirect(url_for('sales'))
+            redirect_date = return_date if return_date else date.today().strftime('%Y-%m-%d')
+            return redirect(url_for('sales', date=redirect_date))
 
         # Validate discount permissions
         if discount_type != 'none' and discount_value > 0:
@@ -1666,11 +1684,13 @@ def add_sale():
 
             if discount_type == 'percentage' and discount_value > max_discount:
                 flash(f'You can only give up to {max_discount}% discount. Contact admin for higher discounts.', 'error')
-                return redirect(url_for('sales'))
+                redirect_date = return_date if return_date else date.today().strftime('%Y-%m-%d')
+                return redirect(url_for('sales', date=redirect_date))
 
             if not discount_reason:
                 flash('Please provide a reason for the discount.', 'error')
-                return redirect(url_for('sales'))
+                redirect_date = return_date if return_date else date.today().strftime('%Y-%m-%d')
+                return redirect(url_for('sales', date=redirect_date))
 
         # Calculate amounts
         original_amount = quantity * unit_price
@@ -1697,11 +1717,13 @@ def add_sale():
         payment_total = cash_amount + mpesa_amount + credit_amount
         if payment_total < sale.total_amount:
             flash(f'Insufficient payment! Total: KES {sale.total_amount:,.2f}, Paid: KES {payment_total:,.2f}', 'error')
-            return redirect(url_for('sales'))
+            redirect_date = return_date if return_date else date.today().strftime('%Y-%m-%d')
+            return redirect(url_for('sales', date=redirect_date))
 
         if credit_amount > 0 and not customer_name:
             flash('Customer name is required for credit sales.', 'error')
-            return redirect(url_for('sales'))
+            redirect_date = return_date if return_date else date.today().strftime('%Y-%m-%d')
+            return redirect(url_for('sales', date=redirect_date))
 
         # Handle excess payment
         if payment_total > sale.total_amount:
@@ -1722,7 +1744,8 @@ def add_sale():
         base_units_needed = quantity * variant.conversion_factor
         if not variant.product.reduce_stock(base_units_needed):
             flash(f'Failed to reduce stock for {variant.get_display_name()}. Please try again.', 'error')
-            return redirect(url_for('sales'))
+            redirect_date = return_date if return_date else date.today().strftime('%Y-%m-%d')
+            return redirect(url_for('sales', date=redirect_date))
 
         db.session.add(sale)
         db.session.flush()
@@ -1766,13 +1789,16 @@ def add_sale():
             change_amount = payment_total - sale.total_amount
             flash(f'Change given: KES {change_amount:,.2f}', 'info')
 
-        return redirect(url_for('sales', date=sale_date_str))
+        # Redirect to the return_date if provided, otherwise use sale_date
+        redirect_date = return_date if return_date else sale_date_str
+        return redirect(url_for('sales', date=redirect_date))
 
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error adding sale: {str(e)}")
         flash(f'An error occurred while recording the sale: {str(e)}', 'error')
-        return redirect(url_for('sales'))
+        redirect_date = request.form.get('return_date', date.today().strftime('%Y-%m-%d'))
+        return redirect(url_for('sales', date=redirect_date))
 
 
 @app.route('/edit_sale/<int:sale_id>', methods=['GET', 'POST'])
@@ -1948,8 +1974,7 @@ def delete_sale(sale_id):
     return redirect(url_for('sales'))
 
 
-# STOCK MANAGEMENT ROUTES
-# Replace the /daily_stock route in app.py with this:
+# STOCK MANAGEMENT ROUTES - UPDATED VERSION
 
 @app.route('/daily_stock')
 @login_required
@@ -1959,6 +1984,9 @@ def daily_stock():
         selected_date = datetime.strptime(selected_date_str, '%Y-%m-%d').date()
     except ValueError:
         selected_date = date.today()
+
+    # Check if a specific date was requested (not today)
+    stick_to_date = selected_date_str != date.today().strftime('%Y-%m-%d')
 
     # Get stock data
     stock_data = db.session.query(Product, Category, DailyStock).select_from(Product) \
@@ -2035,100 +2063,20 @@ def daily_stock():
     return render_template('stock/daily_stock.html',
                            stock_data=processed_stock_data,
                            selected_date=selected_date,
+                           stick_to_date=stick_to_date,
                            daily_purchases=daily_purchases,
                            purchase_total=purchase_total,
                            active_products=active_products,
                            today=date.today())
 
-# Replace the /update_stock route in app.py with this simpler version:
 
-@app.route('/update_stock', methods=['POST'])
-@admin_required
-def update_stock():
-    """Update only opening stock - additions come from purchases only"""
-    try:
-        data = request.json
-        product_id = data['product_id']
-        stock_date = datetime.strptime(data['date'], '%Y-%m-%d').date()
-        current_user = get_current_user()
-
-        product = db.session.get(Product, product_id)
-        if not product:
-            return jsonify({'success': False, 'error': 'Product not found'}), 404
-
-        daily_stock = get_or_create_daily_stock(product_id, stock_date)
-        old_values = daily_stock.to_dict()
-
-        # Only update opening stock
-        manual_opening = safe_float(data.get('opening_stock', 0))
-        daily_stock.opening_stock = manual_opening
-
-        # Additions are ALWAYS calculated from purchases
-        purchase_additions = db.session.query(
-            db.func.coalesce(db.func.sum(StockPurchase.quantity), 0)
-        ).filter(
-            StockPurchase.product_id == product_id,
-            StockPurchase.purchase_date == stock_date
-        ).scalar() or 0
-
-        daily_stock.additions = purchase_additions
-        daily_stock.updated_by = current_user.id
-        daily_stock.updated_at = datetime.now(timezone.utc)
-
-        # Recalculate closing stock
-        opening = daily_stock.opening_stock if daily_stock.opening_stock is not None else 0
-        additions = purchase_additions
-        sales = daily_stock.sales_quantity if daily_stock.sales_quantity is not None else 0
-
-        daily_stock.closing_stock = max(0, opening + additions - sales)
-
-        # Update product's current stock
-        product.current_stock = daily_stock.closing_stock
-        product.last_stock_update = datetime.now(timezone.utc)
-
-        new_values = daily_stock.to_dict()
-
-        changes_summary = get_changes_summary(old_values, new_values)
-        if purchase_additions > 0:
-            changes_summary += f" (Includes {purchase_additions} from purchases)"
-
-        create_audit_log(
-            action='UPDATE',
-            table_name='daily_stock',
-            record_id=daily_stock.id,
-            old_values=old_values,
-            new_values=new_values,
-            changes_summary=f"Stock updated for {product.name} on {stock_date.strftime('%Y-%m-%d')}: {changes_summary}"
-        )
-
-        # Update daily summary
-        update_daily_summary(stock_date)
-
-        db.session.commit()
-
-        return jsonify({
-            'success': True,
-            'closing_stock': daily_stock.closing_stock,
-            'sales_quantity': daily_stock.sales_quantity,
-            'additions': additions,
-            'purchase_additions': purchase_additions,
-            'message': f'Stock updated successfully by {current_user.full_name}',
-            'current_stock': product.current_stock
-        })
-
-    except ValueError as e:
-        db.session.rollback()
-        return jsonify({'success': False, 'error': 'Invalid data format'}), 400
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Error updating stock: {str(e)}")
-        return jsonify({'success': False, 'error': 'Internal server error'}), 500
-
-# STOCK PURCHASE ROUTES
 @app.route('/add_stock_purchase', methods=['POST'])
 @admin_required
 def add_stock_purchase():
     try:
+        # Check if we should return to a specific date
+        return_date = request.form.get('return_date')
+
         product_id = int(request.form.get('product_id'))
         quantity = safe_float(request.form.get('quantity'))
         unit_cost = safe_float(request.form.get('unit_cost'))
@@ -2142,20 +2090,23 @@ def add_stock_purchase():
         # Validate inputs
         if not product_id or quantity <= 0 or unit_cost <= 0:
             flash('Please fill in all required fields with valid values!', 'error')
-            return redirect(request.referrer or url_for('daily_stock'))
+            redirect_date = return_date if return_date else date.today().strftime('%Y-%m-%d')
+            return redirect(url_for('daily_stock', date=redirect_date))
 
         # Parse date
         try:
             purchase_date = datetime.strptime(purchase_date_str, '%Y-%m-%d').date()
         except (ValueError, TypeError):
             flash('Invalid purchase date format.', 'error')
-            return redirect(request.referrer or url_for('daily_stock'))
+            redirect_date = return_date if return_date else date.today().strftime('%Y-%m-%d')
+            return redirect(url_for('daily_stock', date=redirect_date))
 
         # Get product
         product = db.session.get(Product, product_id)
         if not product:
             flash('Product not found!', 'error')
-            return redirect(request.referrer or url_for('daily_stock'))
+            redirect_date = return_date if return_date else date.today().strftime('%Y-%m-%d')
+            return redirect(url_for('daily_stock', date=redirect_date))
 
         # Calculate total cost
         total_cost = quantity * unit_cost
@@ -2190,7 +2141,8 @@ def add_stock_purchase():
             StockPurchase.purchase_date == purchase_date
         ).scalar() or 0
 
-        # Update daily stock (additions already includes manual, we just recalculate closing)
+        # Update daily stock
+        daily_stock.additions = total_purchase_additions
         daily_stock.calculate_closing_stock()
         daily_stock.updated_by = current_user.id
         daily_stock.updated_at = datetime.now(timezone.utc)
@@ -2216,14 +2168,16 @@ def add_stock_purchase():
             f'✅ Purchase recorded successfully! Added {quantity} {product.base_unit}s of {product.name} (KES {total_cost:,.2f})',
             'success')
 
-        # Redirect back to daily_stock with the purchase date
-        return redirect(url_for('daily_stock', date=purchase_date_str))
+        # Redirect to the return_date if provided, otherwise use purchase_date
+        redirect_date = return_date if return_date else purchase_date_str
+        return redirect(url_for('daily_stock', date=redirect_date))
 
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error recording stock purchase: {str(e)}")
         flash(f'Error recording stock purchase: {str(e)}', 'error')
-        return redirect(request.referrer or url_for('daily_stock'))
+        redirect_date = request.form.get('return_date', date.today().strftime('%Y-%m-%d'))
+        return redirect(url_for('daily_stock', date=redirect_date))
 
 
 @app.route('/stock_purchases')
@@ -2397,7 +2351,6 @@ def delete_stock_purchase(purchase_id):
         flash(f'Error deleting stock purchase: {str(e)}', 'error')
 
     return redirect(url_for('stock_purchases'))
-
 
 # EXPENSES ROUTES
 @app.route('/expenses')
@@ -2611,6 +2564,16 @@ def delete_expense(expense_id):
 
 
 # REPORTS ROUTES
+# Add these imports at the top of app.py
+import csv
+from io import StringIO, BytesIO
+from flask import make_response
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
+
+
+# Add these routes to app.py (replace or add to existing reports route)
+
 @app.route('/reports')
 @login_required
 def reports():
@@ -2638,7 +2601,9 @@ def reports():
         Category.name.label('category_name'),
         db.func.coalesce(db.func.sum(Sale.quantity), 0).label('total_quantity'),
         db.func.coalesce(db.func.sum(Sale.total_amount), 0).label('total_sales'),
-        db.func.coalesce(db.func.sum(Sale.total_amount - (Product.base_buying_price * ProductVariant.conversion_factor * Sale.quantity)), 0).label('total_profit')
+        db.func.coalesce(db.func.sum(
+            Sale.total_amount - (Product.base_buying_price * ProductVariant.conversion_factor * Sale.quantity)),
+                         0).label('total_profit')
     ).select_from(Product) \
         .join(ProductVariant, Product.id == ProductVariant.product_id) \
         .join(Sale, ProductVariant.id == Sale.variant_id) \
@@ -2651,6 +2616,46 @@ def reports():
     product_sales = product_query.group_by(Product.id, Product.name, Category.name) \
         .order_by(db.text('total_sales DESC')).all()
 
+    # Category-wise sales for pie chart
+    category_sales = db.session.query(
+        Category.name,
+        db.func.coalesce(db.func.sum(Sale.total_amount), 0).label('total_sales')
+    ).select_from(Category) \
+        .join(Product, Category.id == Product.category_id) \
+        .join(ProductVariant, Product.id == ProductVariant.product_id) \
+        .join(Sale, ProductVariant.id == Sale.variant_id) \
+        .filter(Sale.sale_date.between(start_date, end_date))
+
+    if current_user.role not in ['admin', 'manager']:
+        category_sales = category_sales.filter(Sale.attendant_id == current_user.id)
+
+    category_sales = category_sales.group_by(Category.name).all()
+
+    # Payment method breakdown
+    payment_breakdown = db.session.query(
+        db.func.coalesce(db.func.sum(Sale.cash_amount), 0).label('cash'),
+        db.func.coalesce(db.func.sum(Sale.mpesa_amount), 0).label('mpesa'),
+        db.func.coalesce(db.func.sum(Sale.credit_amount), 0).label('credit')
+    ).filter(Sale.sale_date.between(start_date, end_date))
+
+    if current_user.role not in ['admin', 'manager']:
+        payment_breakdown = payment_breakdown.filter(Sale.attendant_id == current_user.id)
+
+    payment_breakdown = payment_breakdown.first()
+
+    # Expense breakdown by category
+    expense_breakdown = db.session.query(
+        ExpenseCategory.name,
+        db.func.coalesce(db.func.sum(Expense.amount), 0).label('total_amount')
+    ).select_from(ExpenseCategory) \
+        .join(Expense, ExpenseCategory.id == Expense.expense_category_id) \
+        .filter(Expense.expense_date.between(start_date, end_date))
+
+    if current_user.role not in ['admin', 'manager']:
+        expense_breakdown = expense_breakdown.filter(Expense.recorded_by == current_user.id)
+
+    expense_breakdown = expense_breakdown.group_by(ExpenseCategory.name).all()
+
     # Attendant performance
     attendant_performance = []
     if current_user.role in ['admin', 'manager']:
@@ -2659,7 +2664,9 @@ def reports():
             db.func.count(Sale.id).label('total_transactions'),
             db.func.coalesce(db.func.sum(Sale.quantity), 0).label('total_quantity'),
             db.func.coalesce(db.func.sum(Sale.total_amount), 0).label('total_sales'),
-            db.func.coalesce(db.func.sum(Sale.total_amount - (Product.base_buying_price * ProductVariant.conversion_factor * Sale.quantity)), 0).label('total_profit')
+            db.func.coalesce(db.func.sum(
+                Sale.total_amount - (Product.base_buying_price * ProductVariant.conversion_factor * Sale.quantity)),
+                             0).label('total_profit')
         ).select_from(User) \
             .join(Sale, User.id == Sale.attendant_id) \
             .join(ProductVariant, Sale.variant_id == ProductVariant.id) \
@@ -2676,7 +2683,9 @@ def reports():
     else:
         personal_metrics = db.session.query(
             db.func.coalesce(db.func.sum(Sale.total_amount), 0).label('sales'),
-            db.func.coalesce(db.func.sum(Sale.total_amount - (Product.base_buying_price * ProductVariant.conversion_factor * Sale.quantity)), 0).label('profit')
+            db.func.coalesce(db.func.sum(
+                Sale.total_amount - (Product.base_buying_price * ProductVariant.conversion_factor * Sale.quantity)),
+                             0).label('profit')
         ).join(ProductVariant).join(Product).filter(
             Sale.attendant_id == current_user.id,
             Sale.sale_date.between(start_date, end_date)
@@ -2698,6 +2707,9 @@ def reports():
     return render_template('reports/reports.html',
                            daily_summaries=daily_summaries,
                            product_sales=product_sales,
+                           category_sales=category_sales,
+                           payment_breakdown=payment_breakdown,
+                           expense_breakdown=expense_breakdown,
                            attendant_performance=attendant_performance,
                            start_date=start_date,
                            end_date=end_date,
@@ -2707,6 +2719,366 @@ def reports():
                            total_period_net_profit=total_period_net_profit,
                            current_user=current_user)
 
+
+@app.route('/reports/export/<export_type>')
+@login_required
+def export_report(export_type):
+    """Export reports to CSV or Excel"""
+    start_date_str = request.args.get('start_date', (date.today().replace(day=1)).strftime('%Y-%m-%d'))
+    end_date_str = request.args.get('end_date', date.today().strftime('%Y-%m-%d'))
+    format_type = request.args.get('format', 'csv')  # csv or excel
+
+    try:
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+    except ValueError:
+        flash('Invalid date format!', 'error')
+        return redirect(url_for('reports'))
+
+    current_user = get_current_user()
+
+    if export_type == 'sales':
+        return export_sales_report(start_date, end_date, format_type, current_user)
+    elif export_type == 'products':
+        return export_products_report(start_date, end_date, format_type, current_user)
+    elif export_type == 'expenses':
+        return export_expenses_report(start_date, end_date, format_type, current_user)
+    elif export_type == 'daily_summary':
+        return export_daily_summary_report(start_date, end_date, format_type, current_user)
+    elif export_type == 'full':
+        return export_full_report(start_date, end_date, format_type, current_user)
+    else:
+        flash('Invalid export type!', 'error')
+        return redirect(url_for('reports'))
+
+
+def export_sales_report(start_date, end_date, format_type, current_user):
+    """Export sales data"""
+    query = db.session.query(
+        Sale.sale_date,
+        Product.name.label('product_name'),
+        Size.name.label('size_name'),
+        Sale.quantity,
+        Sale.unit_price,
+        Sale.original_amount,
+        Sale.discount_amount,
+        Sale.total_amount,
+        Sale.payment_method,
+        User.full_name.label('attendant_name'),
+        Sale.customer_name
+    ).select_from(Sale) \
+        .join(ProductVariant, Sale.variant_id == ProductVariant.id) \
+        .join(Product, ProductVariant.product_id == Product.id) \
+        .join(Size, ProductVariant.size_id == Size.id) \
+        .join(User, Sale.attendant_id == User.id) \
+        .filter(Sale.sale_date.between(start_date, end_date))
+
+    if current_user.role not in ['admin', 'manager']:
+        query = query.filter(Sale.attendant_id == current_user.id)
+
+    sales_data = query.order_by(Sale.sale_date.desc()).all()
+
+    if format_type == 'excel':
+        return create_excel_report('Sales Report', [
+            'Date', 'Product', 'Size', 'Quantity', 'Unit Price', 'Original Amount',
+            'Discount', 'Total Amount', 'Payment Method', 'Attendant', 'Customer'
+        ], sales_data, f'sales_report_{start_date}_{end_date}.xlsx')
+    else:
+        return create_csv_report('Sales Report', [
+            'Date', 'Product', 'Size', 'Quantity', 'Unit Price', 'Original Amount',
+            'Discount', 'Total Amount', 'Payment Method', 'Attendant', 'Customer'
+        ], sales_data, f'sales_report_{start_date}_{end_date}.csv')
+
+
+def export_products_report(start_date, end_date, format_type, current_user):
+    """Export product sales summary"""
+    query = db.session.query(
+        Product.name.label('product_name'),
+        Category.name.label('category_name'),
+        db.func.coalesce(db.func.sum(Sale.quantity), 0).label('total_quantity'),
+        db.func.coalesce(db.func.sum(Sale.total_amount), 0).label('total_sales'),
+        db.func.coalesce(db.func.sum(
+            Sale.total_amount - (Product.base_buying_price * ProductVariant.conversion_factor * Sale.quantity)),
+                         0).label('total_profit')
+    ).select_from(Product) \
+        .join(ProductVariant, Product.id == ProductVariant.product_id) \
+        .join(Sale, ProductVariant.id == Sale.variant_id) \
+        .join(Category, Product.category_id == Category.id) \
+        .filter(Sale.sale_date.between(start_date, end_date))
+
+    if current_user.role not in ['admin', 'manager']:
+        query = query.filter(Sale.attendant_id == current_user.id)
+
+    product_data = query.group_by(Product.id, Product.name, Category.name) \
+        .order_by(db.text('total_sales DESC')).all()
+
+    headers = ['Product', 'Category', 'Quantity Sold', 'Total Sales', 'Total Profit'] if current_user.role in ['admin',
+                                                                                                               'manager'] else [
+        'Product', 'Category', 'Quantity Sold', 'Total Sales']
+
+    if format_type == 'excel':
+        return create_excel_report('Product Sales Report', headers, product_data,
+                                   f'product_sales_{start_date}_{end_date}.xlsx')
+    else:
+        return create_csv_report('Product Sales Report', headers, product_data,
+                                 f'product_sales_{start_date}_{end_date}.csv')
+
+
+def export_expenses_report(start_date, end_date, format_type, current_user):
+    """Export expenses data"""
+    query = db.session.query(
+        Expense.expense_date,
+        ExpenseCategory.name.label('category_name'),
+        Expense.description,
+        Expense.amount,
+        User.full_name.label('recorded_by_name'),
+        Expense.notes
+    ).select_from(Expense) \
+        .join(ExpenseCategory, Expense.expense_category_id == ExpenseCategory.id) \
+        .join(User, Expense.recorded_by == User.id) \
+        .filter(Expense.expense_date.between(start_date, end_date))
+
+    if current_user.role not in ['admin', 'manager']:
+        query = query.filter(Expense.recorded_by == current_user.id)
+
+    expense_data = query.order_by(Expense.expense_date.desc()).all()
+
+    if format_type == 'excel':
+        return create_excel_report('Expenses Report', [
+            'Date', 'Category', 'Description', 'Amount', 'Recorded By', 'Notes'
+        ], expense_data, f'expenses_report_{start_date}_{end_date}.xlsx')
+    else:
+        return create_csv_report('Expenses Report', [
+            'Date', 'Category', 'Description', 'Amount', 'Recorded By', 'Notes'
+        ], expense_data, f'expenses_report_{start_date}_{end_date}.csv')
+
+
+def export_daily_summary_report(start_date, end_date, format_type, current_user):
+    """Export daily summary"""
+    daily_summaries = DailySummary.query.filter(
+        DailySummary.date.between(start_date, end_date)
+    ).order_by(DailySummary.date.desc()).all()
+
+    data = [(s.date, s.total_transactions, s.total_sales, s.total_profit, s.total_expenses, s.net_profit) for s in
+            daily_summaries]
+
+    if format_type == 'excel':
+        return create_excel_report('Daily Summary Report', [
+            'Date', 'Transactions', 'Total Sales', 'Gross Profit', 'Expenses', 'Net Profit'
+        ], data, f'daily_summary_{start_date}_{end_date}.xlsx')
+    else:
+        return create_csv_report('Daily Summary Report', [
+            'Date', 'Transactions', 'Total Sales', 'Gross Profit', 'Expenses', 'Net Profit'
+        ], data, f'daily_summary_{start_date}_{end_date}.csv')
+
+
+def export_full_report(start_date, end_date, format_type, current_user):
+    """Export comprehensive Excel report with multiple sheets"""
+    if format_type != 'excel':
+        flash('Full report is only available in Excel format', 'warning')
+        return redirect(url_for('reports'))
+
+    # Create workbook
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)  # Remove default sheet
+
+    # Add Summary Sheet
+    ws_summary = wb.create_sheet('Summary')
+    add_summary_sheet(ws_summary, start_date, end_date, current_user)
+
+    # Add Sales Sheet
+    ws_sales = wb.create_sheet('Sales')
+    add_sales_sheet(ws_sales, start_date, end_date, current_user)
+
+    # Add Products Sheet
+    ws_products = wb.create_sheet('Product Sales')
+    add_products_sheet(ws_products, start_date, end_date, current_user)
+
+    # Add Expenses Sheet
+    ws_expenses = wb.create_sheet('Expenses')
+    add_expenses_sheet(ws_expenses, start_date, end_date, current_user)
+
+    # Save to BytesIO
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    response = make_response(output.read())
+    response.headers['Content-Disposition'] = f'attachment; filename=full_report_{start_date}_{end_date}.xlsx'
+    response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+    return response
+
+
+def create_csv_report(title, headers, data, filename):
+    """Create CSV report"""
+    si = StringIO()
+    writer = csv.writer(si)
+
+    writer.writerow([title])
+    writer.writerow([])
+    writer.writerow(headers)
+
+    for row in data:
+        writer.writerow(row)
+
+    output = make_response(si.getvalue())
+    output.headers['Content-Disposition'] = f'attachment; filename={filename}'
+    output.headers['Content-Type'] = 'text/csv'
+
+    return output
+
+
+def create_excel_report(title, headers, data, filename):
+    """Create Excel report"""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = title[:31]  # Excel sheet name limit
+
+    # Title
+    ws.merge_cells('A1:' + chr(65 + len(headers) - 1) + '1')
+    title_cell = ws['A1']
+    title_cell.value = title
+    title_cell.font = Font(size=16, bold=True)
+    title_cell.alignment = Alignment(horizontal='center')
+
+    # Headers
+    header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
+    header_font = Font(color='FFFFFF', bold=True)
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=3, column=col)
+        cell.value = header
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center')
+
+    # Data
+    for row_idx, row_data in enumerate(data, 4):
+        for col_idx, value in enumerate(row_data, 1):
+            ws.cell(row=row_idx, column=col_idx, value=value)
+
+    # Auto-adjust column widths
+    for column in ws.columns:
+        max_length = 0
+        column_letter = column[0].column_letter
+        for cell in column:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(cell.value)
+            except:
+                pass
+        adjusted_width = min(max_length + 2, 50)
+        ws.column_dimensions[column_letter].width = adjusted_width
+
+    # Save to BytesIO
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    response = make_response(output.read())
+    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+    response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+    return response
+
+
+def add_summary_sheet(ws, start_date, end_date, current_user):
+    """Add summary information to worksheet"""
+    ws.append(['Business Summary Report'])
+    ws.append([f'Period: {start_date} to {end_date}'])
+    ws.append([])
+
+    # Get totals
+    if current_user.role in ['admin', 'manager']:
+        daily_summaries = DailySummary.query.filter(
+            DailySummary.date.between(start_date, end_date)
+        ).all()
+        total_sales = sum(s.total_sales or 0 for s in daily_summaries)
+        total_profit = sum(s.total_profit or 0 for s in daily_summaries)
+        total_expenses = sum(s.total_expenses or 0 for s in daily_summaries)
+    else:
+        # Personal metrics for attendants
+        total_sales = 0
+        total_profit = 0
+        total_expenses = 0
+
+    ws.append(['Metric', 'Amount'])
+    ws.append(['Total Sales', total_sales])
+    ws.append(['Gross Profit', total_profit])
+    ws.append(['Total Expenses', total_expenses])
+    ws.append(['Net Profit', total_profit - total_expenses])
+
+
+def add_sales_sheet(ws, start_date, end_date, current_user):
+    """Add sales data to worksheet"""
+    query = db.session.query(
+        Sale.sale_date,
+        Product.name,
+        Size.name,
+        Sale.quantity,
+        Sale.unit_price,
+        Sale.total_amount,
+        User.full_name
+    ).select_from(Sale) \
+        .join(ProductVariant, Sale.variant_id == ProductVariant.id) \
+        .join(Product, ProductVariant.product_id == Product.id) \
+        .join(Size, ProductVariant.size_id == Size.id) \
+        .join(User, Sale.attendant_id == User.id) \
+        .filter(Sale.sale_date.between(start_date, end_date))
+
+    if current_user.role not in ['admin', 'manager']:
+        query = query.filter(Sale.attendant_id == current_user.id)
+
+    sales_data = query.order_by(Sale.sale_date.desc()).all()
+
+    ws.append(['Date', 'Product', 'Size', 'Quantity', 'Unit Price', 'Total', 'Attendant'])
+    for sale in sales_data:
+        ws.append(list(sale))
+
+
+def add_products_sheet(ws, start_date, end_date, current_user):
+    """Add product sales data to worksheet"""
+    query = db.session.query(
+        Product.name,
+        Category.name,
+        db.func.sum(Sale.quantity),
+        db.func.sum(Sale.total_amount)
+    ).select_from(Product) \
+        .join(ProductVariant, Product.id == ProductVariant.product_id) \
+        .join(Sale, ProductVariant.id == Sale.variant_id) \
+        .join(Category, Product.category_id == Category.id) \
+        .filter(Sale.sale_date.between(start_date, end_date))
+
+    if current_user.role not in ['admin', 'manager']:
+        query = query.filter(Sale.attendant_id == current_user.id)
+
+    product_data = query.group_by(Product.id, Product.name, Category.name).all()
+
+    ws.append(['Product', 'Category', 'Quantity Sold', 'Total Sales'])
+    for product in product_data:
+        ws.append(list(product))
+
+
+def add_expenses_sheet(ws, start_date, end_date, current_user):
+    """Add expenses data to worksheet"""
+    query = db.session.query(
+        Expense.expense_date,
+        ExpenseCategory.name,
+        Expense.description,
+        Expense.amount
+    ).select_from(Expense) \
+        .join(ExpenseCategory, Expense.expense_category_id == ExpenseCategory.id) \
+        .filter(Expense.expense_date.between(start_date, end_date))
+
+    if current_user.role not in ['admin', 'manager']:
+        query = query.filter(Expense.recorded_by == current_user.id)
+
+    expense_data = query.order_by(Expense.expense_date.desc()).all()
+
+    ws.append(['Date', 'Category', 'Description', 'Amount'])
+    for expense in expense_data:
+        ws.append(list(expense))
 
 # USER PROFILE ROUTES
 @app.route('/profile')
@@ -2935,6 +3307,159 @@ def api_discount_permissions():
     })
 
 
+#Search functions
+@app.route('/search/suggestions')
+@login_required
+def search_suggestions():
+    """API endpoint for search suggestions"""
+    query = request.args.get('q', '').strip()
+    limit = min(int(request.args.get('limit', 5)), 20)
+
+    if len(query) < 2:
+        return jsonify({'suggestions': []})
+
+    suggestions = []
+    current_user = get_current_user()
+
+    # Search products
+    products = Product.query.join(Category).filter(
+        Product.name.ilike(f'%{query}%'),
+        Category.is_active == True
+    ).limit(limit).all()
+
+    for product in products:
+        suggestions.append({
+            'type': 'product',
+            'text': product.name,
+            'category': product.category.name,
+            'icon': 'fas fa-box',
+            'url': url_for('product_variants', product_id=product.id)  # Direct link to variants
+        })
+
+    # Search product variants by size
+    variants = db.session.query(ProductVariant, Product, Size).select_from(ProductVariant) \
+        .join(Product, ProductVariant.product_id == Product.id) \
+        .join(Size, ProductVariant.size_id == Size.id) \
+        .join(Category, Product.category_id == Category.id) \
+        .filter(
+        (Product.name.ilike(f'%{query}%')) | (Size.name.ilike(f'%{query}%')),
+        ProductVariant.is_active == True,
+        Category.is_active == True
+    ).limit(limit).all()
+
+    for variant, product, size in variants:
+        suggestions.append({
+            'type': 'variant',
+            'text': f"{product.name} - {size.name}",
+            'category': f"KES {variant.selling_price:,.2f}",
+            'icon': 'fas fa-wine-bottle',
+            'url': url_for('product_variants', product_id=product.id)
+        })
+
+    # Search categories (admin/manager only)
+    if current_user.role in ['admin', 'manager']:
+        categories = Category.query.filter(
+            Category.name.ilike(f'%{query}%'),
+            Category.is_active == True
+        ).limit(3).all()
+
+        for category in categories:
+            suggestions.append({
+                'type': 'category',
+                'text': category.name,
+                'category': 'Product Category',
+                'icon': 'fas fa-layer-group',
+                'url': url_for('categories')
+            })
+
+    # Search users (admin only)
+    if current_user.role == 'admin':
+        users = User.query.filter(
+            User.full_name.ilike(f'%{query}%') | User.username.ilike(f'%{query}%'),
+            User.is_active == True
+        ).limit(3).all()
+
+        for user in users:
+            suggestions.append({
+                'type': 'user',
+                'text': user.full_name,
+                'category': f'{user.role.title()} - {user.username}',
+                'icon': 'fas fa-user',
+                'url': url_for('users')
+            })
+
+    return jsonify({'suggestions': suggestions[:limit]})
+
+
+@app.route('/search')
+@login_required
+def search():
+    """Full search results page"""
+    query = request.args.get('q', '').strip()
+    search_type = request.args.get('type', 'all')
+
+    if not query:
+        flash('Please enter a search term', 'warning')
+        return redirect(url_for('dashboard'))
+
+    current_user = get_current_user()
+    results = {
+        'products': [],
+        'variants': [],
+        'categories': [],
+        'users': [],
+        'sales': []
+    }
+
+    # Search products
+    if search_type in ['all', 'product']:
+        results['products'] = Product.query.join(Category).filter(
+            Product.name.ilike(f'%{query}%'),
+            Category.is_active == True
+        ).all()
+
+    # Search product variants
+    if search_type in ['all', 'variant']:
+        results['variants'] = db.session.query(ProductVariant, Product, Size).select_from(ProductVariant) \
+            .join(Product, ProductVariant.product_id == Product.id) \
+            .join(Size, ProductVariant.size_id == Size.id) \
+            .join(Category, Product.category_id == Category.id) \
+            .filter(
+            (Product.name.ilike(f'%{query}%')) | (Size.name.ilike(f'%{query}%')),
+            ProductVariant.is_active == True,
+            Category.is_active == True
+        ).all()
+
+    # Search categories (admin/manager only)
+    if current_user.role in ['admin', 'manager'] and search_type in ['all', 'category']:
+        results['categories'] = Category.query.filter(
+            Category.name.ilike(f'%{query}%')
+        ).all()
+
+    # Search users (admin only)
+    if current_user.role == 'admin' and search_type in ['all', 'user']:
+        results['users'] = User.query.filter(
+            User.full_name.ilike(f'%{query}%') | User.username.ilike(f'%{query}%')
+        ).all()
+
+    # Search recent sales
+    if search_type in ['all', 'sale']:
+        sales_query = db.session.query(Sale, ProductVariant, Product).select_from(Sale) \
+            .join(ProductVariant, Sale.variant_id == ProductVariant.id) \
+            .join(Product, ProductVariant.product_id == Product.id) \
+            .filter(Product.name.ilike(f'%{query}%'))
+
+        if current_user.role not in ['admin', 'manager']:
+            sales_query = sales_query.filter(Sale.attendant_id == current_user.id)
+
+        results['sales'] = sales_query.order_by(Sale.timestamp.desc()).limit(20).all()
+
+    return render_template('search_results.html',
+                           query=query,
+                           results=results,
+                           search_type=search_type)
+
+
 # ERROR HANDLERS
 @app.errorhandler(404)
 def not_found(error):
@@ -3131,6 +3656,8 @@ def create_app(config=None):
         initialize_database()
 
     return app
+
+
 
 
 if __name__ == '__main__':

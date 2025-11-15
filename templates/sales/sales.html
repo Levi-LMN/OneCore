@@ -1,4 +1,4 @@
-<!-- sales/sales.html -->
+<!-- sales/sales.html - UPDATED VERSION WITH STAY ON DATE FEATURE -->
 {% extends "base.html" %}
 
 {% block title %}Sales - LiquorPro{% endblock %}
@@ -6,6 +6,28 @@
 {% block breadcrumb %}Sales / POS{% endblock %}
 
 {% block content %}
+<style>
+    .payment-input:focus {
+        border-color: #28a745;
+        box-shadow: 0 0 0 0.2rem rgba(40, 167, 69, 0.25);
+    }
+
+    .border-warning {
+        border-width: 2px !important;
+        animation: pulse-warning 1s infinite;
+    }
+
+    @keyframes pulse-warning {
+        0%, 100% { border-color: #ffc107; }
+        50% { border-color: #ff9800; }
+    }
+
+    #paymentSummary .badge {
+        font-weight: 600;
+        padding: 0.5rem 0.75rem;
+    }
+</style>
+
 <div class="row mb-3">
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -13,13 +35,20 @@
                 <h5>Sales Management</h5>
                 <small class="text-muted">Date: {{ selected_date.strftime('%A, %B %d, %Y') }}</small>
             </div>
-            <form method="GET" action="{{ url_for('sales') }}" class="d-flex gap-2">
+            <form method="GET" action="{{ url_for('sales') }}" class="d-flex gap-2 align-items-center">
                 <input type="date" class="form-control form-control-sm" name="date"
                        value="{{ selected_date.strftime('%Y-%m-%d') }}"
-                       max="{{ today.strftime('%Y-%m-%d') }}">
+                       max="{{ today.strftime('%Y-%m-%d') }}" id="dateInput">
                 <button type="submit" class="btn btn-sm btn-primary">
                     <i class="fas fa-filter"></i>
                 </button>
+                <div class="form-check form-switch ms-2">
+                    <input class="form-check-input" type="checkbox" id="stickToDate"
+                           {% if stick_to_date %}checked{% endif %}>
+                    <label class="form-check-label small text-muted" for="stickToDate" style="white-space: nowrap;">
+                        Stay on date
+                    </label>
+                </div>
             </form>
         </div>
     </div>
@@ -73,19 +102,35 @@
             <div class="row g-3">
                 <div class="col-md-4">
                     <label class="form-label">Product Variant *</label>
-                    <select class="form-select" name="variant_id" id="variant_id" required>
-                        <option value="">Select Product Variant</option>
-                        {% for variant, product, category, size in variants %}
-                        <option value="{{ variant.id }}"
-                                data-price="{{ variant.selling_price }}"
-                                data-available="{{ variant.get_available_stock_in_variant_units() }}"
-                                data-product="{{ product.name }}"
-                                data-size="{{ size.name }}">
-                            {{ product.name }} - {{ size.name }} ({{ format_currency(variant.selling_price) }})
-                            [{{ variant.get_available_stock_in_variant_units() }} available]
-                        </option>
-                        {% endfor %}
-                    </select>
+                    <div class="position-relative">
+                        <!-- Search Input -->
+                        <input type="text" class="form-control" id="variantSearch"
+                               placeholder="Type to search products..." autocomplete="off">
+
+                        <!-- Hidden Select (actual form field) -->
+                        <select class="form-select d-none" name="variant_id" id="variant_id" required>
+                            <option value="">Select Product Variant</option>
+                            {% for variant, product, category, size in variants %}
+                            <option value="{{ variant.id }}"
+                                    data-price="{{ variant.selling_price }}"
+                                    data-available="{{ variant.get_available_stock_in_variant_units() }}"
+                                    data-product="{{ product.name }}"
+                                    data-size="{{ size.name }}"
+                                    data-category="{{ category.name }}"
+                                    data-search-text="{{ product.name|lower }} {{ size.name|lower }} {{ category.name|lower }}">
+                                {{ product.name }} - {{ size.name }} ({{ format_currency(variant.selling_price) }})
+                                [{{ variant.get_available_stock_in_variant_units() }} available]
+                            </option>
+                            {% endfor %}
+                        </select>
+
+                        <!-- Dropdown results -->
+                        <div id="variantDropdown" class="position-absolute w-100 bg-white border rounded shadow-sm"
+                             style="max-height: 300px; overflow-y: auto; z-index: 1000; display: none;">
+                            <div id="variantResults"></div>
+                        </div>
+                    </div>
+                    <small class="text-muted">Selected: <span id="selectedVariant" class="fw-bold">None</span></small>
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">Quantity *</label>
@@ -127,22 +172,52 @@
             </div>
 
             <!-- Payment Section -->
-            <div class="row g-3 mt-2">
+            <div class="row g-3 mt-3">
+                <div class="col-12">
+                    <div class="card bg-light">
+                        <div class="card-body py-3">
+                            <div class="row align-items-center">
+                                <div class="col-md-6 mb-2 mb-md-0">
+                                    <h6 class="mb-1">Payment Summary</h6>
+                                    <div id="paymentSummary" class="text-muted">
+                                        Select product and quantity first
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small mb-1">Quick Fill:</label>
+                                    <div class="d-grid gap-2 d-md-flex">
+                                        <button type="button" class="btn btn-sm btn-primary" id="quickCash">
+                                            <i class="fas fa-money-bill-wave me-1"></i>Full Cash
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-success" id="quickMpesa">
+                                            <i class="fas fa-mobile-alt me-1"></i>Full M-Pesa
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-warning" id="quickCredit">
+                                            <i class="fas fa-credit-card me-1"></i>Full Credit
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row g-3 mt-1">
                 <div class="col-md-3">
                     <label class="form-label">Cash Amount</label>
-                    <input type="number" class="form-control" name="cash_amount" id="cash_amount" step="0.01" min="0" value="0">
+                    <input type="number" class="form-control payment-input" name="cash_amount" id="cash_amount" step="0.01" min="0" value="0">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">M-Pesa Amount</label>
-                    <input type="number" class="form-control" name="mpesa_amount" id="mpesa_amount" step="0.01" min="0" value="0">
+                    <input type="number" class="form-control payment-input" name="mpesa_amount" id="mpesa_amount" step="0.01" min="0" value="0">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Credit Amount</label>
-                    <input type="number" class="form-control" name="credit_amount" id="credit_amount" step="0.01" min="0" value="0">
+                    <input type="number" class="form-control payment-input" name="credit_amount" id="credit_amount" step="0.01" min="0" value="0">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Customer Name</label>
-                    <input type="text" class="form-control" name="customer_name" placeholder="Required for credit">
+                    <input type="text" class="form-control" name="customer_name" id="customer_name" placeholder="Required for credit">
                 </div>
             </div>
 
@@ -168,7 +243,7 @@
 <!-- Sales List -->
 <div class="card shadow-sm">
     <div class="card-header">
-        <h6 class="mb-0"><i class="fas fa-list me-2"></i>Today's Sales ({{ sales_data|length }} transactions)</h6>
+        <h6 class="mb-0"><i class="fas fa-list me-2"></i>Sales for {{ selected_date.strftime('%B %d, %Y') }} ({{ sales_data|length }} transactions)</h6>
     </div>
     <div class="card-body">
         <div class="table-responsive">
@@ -248,13 +323,163 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const variantSearch = document.getElementById('variantSearch');
     const variantSelect = document.getElementById('variant_id');
+    const variantDropdown = document.getElementById('variantDropdown');
+    const variantResults = document.getElementById('variantResults');
+    const selectedVariantDisplay = document.getElementById('selectedVariant');
     const quantityInput = document.getElementById('quantity');
     const unitPriceInput = document.getElementById('unit_price');
     const totalDisplay = document.getElementById('total_display');
     const availableStock = document.getElementById('availableStock');
     const discountType = document.getElementById('discount_type');
     const discountValue = document.getElementById('discount_value');
+    const stickToDateCheckbox = document.getElementById('stickToDate');
+    const saleForm = document.getElementById('saleForm');
+    const cashAmount = document.getElementById('cash_amount');
+    const mpesaAmount = document.getElementById('mpesa_amount');
+    const creditAmount = document.getElementById('credit_amount');
+    const customerName = document.getElementById('customer_name');
+    const paymentSummary = document.getElementById('paymentSummary');
+    const quickCash = document.getElementById('quickCash');
+    const quickMpesa = document.getElementById('quickMpesa');
+    const quickCredit = document.getElementById('quickCredit');
+
+    let currentTotal = 0;
+
+    // Load "stick to date" preference from localStorage
+    const stickPreference = localStorage.getItem('stickToDate') === 'true';
+    if (!stickToDateCheckbox.checked && stickPreference) {
+        stickToDateCheckbox.checked = stickPreference;
+    }
+
+    // Save preference when checkbox changes
+    stickToDateCheckbox.addEventListener('change', function() {
+        localStorage.setItem('stickToDate', this.checked);
+    });
+
+    // Modify form submission to include selected date if "stick to date" is enabled
+    saleForm.addEventListener('submit', function(e) {
+        if (stickToDateCheckbox.checked) {
+            const dateInput = document.getElementById('dateInput');
+            if (dateInput && dateInput.value) {
+                // Add hidden input with the current viewing date
+                const hiddenInput = document.createElement('input');
+                hiddenInput.type = 'hidden';
+                hiddenInput.name = 'return_date';
+                hiddenInput.value = dateInput.value;
+                saleForm.appendChild(hiddenInput);
+            }
+        }
+    });
+
+    let allVariants = [];
+
+    // Build variants array from select options
+    Array.from(variantSelect.options).forEach(option => {
+        if (option.value) {
+            allVariants.push({
+                value: option.value,
+                text: option.text,
+                price: option.dataset.price,
+                available: option.dataset.available,
+                product: option.dataset.product,
+                size: option.dataset.size,
+                category: option.dataset.category,
+                searchText: option.dataset.searchText
+            });
+        }
+    });
+
+    // Search functionality
+    variantSearch.addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase().trim();
+
+        if (searchTerm.length === 0) {
+            variantDropdown.style.display = 'none';
+            return;
+        }
+
+        const filtered = allVariants.filter(v =>
+            v.searchText.includes(searchTerm)
+        );
+
+        if (filtered.length === 0) {
+            variantResults.innerHTML = '<div class="p-3 text-muted">No products found</div>';
+        } else {
+            variantResults.innerHTML = filtered.map(v => `
+                <div class="variant-result-item p-2 border-bottom"
+                     style="cursor: pointer;"
+                     data-variant-id="${v.value}"
+                     onmouseover="this.style.backgroundColor='#f8f9fa'"
+                     onmouseout="this.style.backgroundColor='white'">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${v.product}</strong> - ${v.size}
+                            <br>
+                            <small class="text-muted">${v.category}</small>
+                        </div>
+                        <div class="text-end">
+                            <strong>KES ${parseFloat(v.price).toLocaleString()}</strong>
+                            <br>
+                            <small class="text-${v.available > 5 ? 'success' : 'warning'}">
+                                ${v.available} in stock
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        variantDropdown.style.display = 'block';
+    });
+
+    // Click on result
+    variantResults.addEventListener('click', function(e) {
+        const item = e.target.closest('.variant-result-item');
+        if (item) {
+            const variantId = item.dataset.variantId;
+            selectVariant(variantId);
+        }
+    });
+
+    // Select variant function
+    function selectVariant(variantId) {
+        variantSelect.value = variantId;
+        const variant = allVariants.find(v => v.value === variantId);
+
+        if (variant) {
+            variantSearch.value = `${variant.product} - ${variant.size}`;
+            selectedVariantDisplay.textContent = `${variant.product} - ${variant.size}`;
+        }
+
+        variantDropdown.style.display = 'none';
+        updateCalculations();
+        quantityInput.focus();
+    }
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!variantSearch.contains(e.target) && !variantDropdown.contains(e.target)) {
+            variantDropdown.style.display = 'none';
+        }
+    });
+
+    // Focus search on load
+    variantSearch.focus();
+
+    // Keyboard navigation
+    variantSearch.addEventListener('keydown', function(e) {
+        if (e.key === 'ArrowDown' && variantDropdown.style.display === 'block') {
+            e.preventDefault();
+            const firstItem = variantResults.querySelector('.variant-result-item');
+            if (firstItem) firstItem.click();
+        } else if (e.key === 'Enter' && variantDropdown.style.display === 'block') {
+            e.preventDefault();
+            const firstItem = variantResults.querySelector('.variant-result-item');
+            if (firstItem) firstItem.click();
+        }
+    });
 
     function updateCalculations() {
         const selectedOption = variantSelect.options[variantSelect.selectedIndex];
@@ -277,7 +502,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 total = total - discVal;
             }
 
-            totalDisplay.value = 'KES ' + Math.max(0, total).toFixed(2);
+            currentTotal = Math.max(0, total);
+            totalDisplay.value = 'KES ' + currentTotal.toFixed(2);
 
             // Validate quantity
             if (quantity > available) {
@@ -285,14 +511,112 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 quantityInput.setCustomValidity('');
             }
+
+            // Update payment summary
+            updatePaymentSummary();
         }
     }
 
-    variantSelect.addEventListener('change', updateCalculations);
+    function updatePaymentSummary() {
+        if (currentTotal === 0) {
+            paymentSummary.innerHTML = '<span class="text-muted">Select product and quantity first</span>';
+            return;
+        }
+
+        const cash = parseFloat(cashAmount.value) || 0;
+        const mpesa = parseFloat(mpesaAmount.value) || 0;
+        const credit = parseFloat(creditAmount.value) || 0;
+        const totalPaid = cash + mpesa + credit;
+        const balance = currentTotal - totalPaid;
+
+        let summaryHtml = '<div class="d-flex flex-wrap gap-3">';
+        summaryHtml += `<div><strong>Total:</strong> <span class="badge bg-primary fs-6">KES ${currentTotal.toFixed(2)}</span></div>`;
+
+        if (totalPaid > 0) {
+            summaryHtml += `<div><strong>Paid:</strong> <span class="badge bg-success fs-6">KES ${totalPaid.toFixed(2)}</span></div>`;
+        }
+
+        if (balance > 0) {
+            summaryHtml += `<div><strong>Balance:</strong> <span class="badge bg-danger fs-6">KES ${balance.toFixed(2)}</span></div>`;
+        } else if (balance < 0) {
+            summaryHtml += `<div><strong>Change:</strong> <span class="badge bg-info fs-6">KES ${Math.abs(balance).toFixed(2)}</span></div>`;
+        } else if (totalPaid > 0) {
+            summaryHtml += `<div><span class="badge bg-success fs-6"><i class="fas fa-check-circle me-1"></i>PAID IN FULL</span></div>`;
+        }
+
+        summaryHtml += '</div>';
+        paymentSummary.innerHTML = summaryHtml;
+
+        // Highlight customer name field if credit > 0
+        if (credit > 0) {
+            customerName.classList.add('border-warning');
+            if (!customerName.value) {
+                customerName.placeholder = '⚠️ Required for credit sales';
+            }
+        } else {
+            customerName.classList.remove('border-warning');
+            customerName.placeholder = 'Required for credit';
+        }
+    }
+
+    // Quick payment buttons
+    quickCash.addEventListener('click', function() {
+        if (currentTotal > 0) {
+            cashAmount.value = currentTotal.toFixed(2);
+            mpesaAmount.value = '0';
+            creditAmount.value = '0';
+            updatePaymentSummary();
+            cashAmount.focus();
+        } else {
+            alert('Please select a product and quantity first');
+        }
+    });
+
+    quickMpesa.addEventListener('click', function() {
+        if (currentTotal > 0) {
+            mpesaAmount.value = currentTotal.toFixed(2);
+            cashAmount.value = '0';
+            creditAmount.value = '0';
+            updatePaymentSummary();
+            mpesaAmount.focus();
+        } else {
+            alert('Please select a product and quantity first');
+        }
+    });
+
+    quickCredit.addEventListener('click', function() {
+        if (currentTotal > 0) {
+            creditAmount.value = currentTotal.toFixed(2);
+            cashAmount.value = '0';
+            mpesaAmount.value = '0';
+            updatePaymentSummary();
+            customerName.focus();
+        } else {
+            alert('Please select a product and quantity first');
+        }
+    });
+
+    // Listen to payment input changes
+    cashAmount.addEventListener('input', updatePaymentSummary);
+    mpesaAmount.addEventListener('input', updatePaymentSummary);
+    creditAmount.addEventListener('input', updatePaymentSummary);
+
     quantityInput.addEventListener('input', updateCalculations);
     discountType.addEventListener('change', updateCalculations);
     discountValue.addEventListener('input', updateCalculations);
+
+    // Reset functionality
+    document.querySelector('button[type="reset"]').addEventListener('click', function() {
+        setTimeout(() => {
+            variantSearch.value = '';
+            selectedVariantDisplay.textContent = 'None';
+            availableStock.textContent = '';
+            totalDisplay.value = '';
+            currentTotal = 0;
+            updatePaymentSummary();
+            variantSearch.focus();
+        }, 10);
+    });
 });
 </script>
 {% endblock %}
-
