@@ -142,35 +142,6 @@ def validate_email(email):
     return bool(re.match(pattern, email))
 
 
-def get_or_create_daily_stock(product_id, stock_date):
-    """Get or create daily stock record"""
-    daily_stock = DailyStock.query.filter_by(product_id=product_id, date=stock_date).first()
-
-    if not daily_stock:
-        product = db.session.get(Product, product_id)
-
-        # Get yesterday's closing stock
-        previous_date = stock_date - timedelta(days=1)
-        previous_stock = DailyStock.query.filter_by(
-            product_id=product_id,
-            date=previous_date
-        ).first()
-
-        opening_stock = previous_stock.closing_stock if previous_stock else (product.current_stock if product else 0)
-
-        daily_stock = DailyStock(
-            product_id=product_id,
-            date=stock_date,
-            opening_stock=opening_stock,
-            additions=0,
-            sales_quantity=0,
-            closing_stock=opening_stock
-        )
-
-        db.session.add(daily_stock)
-        db.session.flush()
-
-    return daily_stock
 
 
 def update_daily_stock_sales(product_id, stock_date):
@@ -1975,104 +1946,64 @@ def delete_sale(sale_id):
 
 
 # STOCK MANAGEMENT ROUTES - UPDATED VERSION
+def get_or_create_daily_stock(product_id, stock_date):
+    """Get or create daily stock record - FIXED VERSION"""
+    daily_stock = DailyStock.query.filter_by(product_id=product_id, date=stock_date).first()
 
-@app.route('/daily_stock')
-@login_required
-def daily_stock():
-    selected_date_str = request.args.get('date', date.today().strftime('%Y-%m-%d'))
-    try:
-        selected_date = datetime.strptime(selected_date_str, '%Y-%m-%d').date()
-    except ValueError:
-        selected_date = date.today()
+    if not daily_stock:
+        product = db.session.get(Product, product_id)
 
-    # Check if a specific date was requested (not today)
-    stick_to_date = selected_date_str != date.today().strftime('%Y-%m-%d')
+        # Get yesterday's closing stock
+        previous_date = stock_date - timedelta(days=1)
+        previous_stock = DailyStock.query.filter_by(
+            product_id=product_id,
+            date=previous_date
+        ).first()
 
-    # Get stock data
-    stock_data = db.session.query(Product, Category, DailyStock).select_from(Product) \
-        .join(Category, Product.category_id == Category.id) \
-        .outerjoin(DailyStock, (Product.id == DailyStock.product_id) & (DailyStock.date == selected_date)) \
-        .order_by(Category.name, Product.name).all()
-
-    processed_stock_data = []
-    for product, category, daily_stock in stock_data:
-        if not daily_stock:
-            temp_stock = DailyStock(product_id=product.id, date=selected_date)
-
-            previous_date = selected_date - timedelta(days=1)
-            previous_stock = DailyStock.query.filter_by(
-                product_id=product.id,
-                date=previous_date
-            ).first()
-
-            temp_stock.opening_stock = (
-                previous_stock.closing_stock if previous_stock and previous_stock.closing_stock is not None
-                else product.current_stock
-            )
-
-            # Calculate additions from purchases ONLY
-            purchase_additions = db.session.query(
-                db.func.coalesce(db.func.sum(StockPurchase.quantity), 0)
-            ).filter(
-                StockPurchase.product_id == product.id,
-                StockPurchase.purchase_date == selected_date
-            ).scalar() or 0
-
-            temp_stock.additions = purchase_additions
-
-            # Calculate sales in base units for this date
-            total_base_units_sold = db.session.query(
-                db.func.coalesce(db.func.sum(Sale.quantity * ProductVariant.conversion_factor), 0)
-            ).join(ProductVariant, Sale.variant_id == ProductVariant.id).filter(
-                ProductVariant.product_id == product.id,
-                Sale.sale_date == selected_date
-            ).scalar()
-
-            temp_stock.sales_quantity = total_base_units_sold
-            temp_stock.calculate_closing_stock()
-            daily_stock = temp_stock
+        # CRITICAL FIX: Opening stock should ONLY come from previous day's closing
+        # NEVER include current day's purchases in opening stock
+        if previous_stock:
+            opening_stock = previous_stock.closing_stock
         else:
-            # Ensure additions reflects actual purchases
-            purchase_additions = db.session.query(
-                db.func.coalesce(db.func.sum(StockPurchase.quantity), 0)
-            ).filter(
-                StockPurchase.product_id == product.id,
-                StockPurchase.purchase_date == selected_date
-            ).scalar() or 0
+            # If no previous record, use product's current stock as baseline
+            opening_stock = product.current_stock if product else 0
 
-            # Update if different (this syncs any discrepancies)
-            if daily_stock.additions != purchase_additions:
-                daily_stock.additions = purchase_additions
-                daily_stock.calculate_closing_stock()
+        # Calculate additions from purchases ONLY (not included in opening)
+        purchase_additions = db.session.query(
+            db.func.coalesce(db.func.sum(StockPurchase.quantity), 0)
+        ).filter(
+            StockPurchase.product_id == product_id,
+            StockPurchase.purchase_date == stock_date
+        ).scalar() or 0
 
-        processed_stock_data.append((product, category, daily_stock))
+        # Calculate sales in base units for this date
+        total_base_units_sold = db.session.query(
+            db.func.coalesce(db.func.sum(Sale.quantity * ProductVariant.conversion_factor), 0)
+        ).join(ProductVariant, Sale.variant_id == ProductVariant.id).filter(
+            ProductVariant.product_id == product_id,
+            Sale.sale_date == stock_date
+        ).scalar() or 0
 
-    # Get purchases for this date
-    daily_purchases = StockPurchase.query.filter_by(
-        purchase_date=selected_date
-    ).order_by(StockPurchase.timestamp.desc()).all()
+        daily_stock = DailyStock(
+            product_id=product_id,
+            date=stock_date,
+            opening_stock=opening_stock,  # Only previous closing, NO purchases
+            additions=purchase_additions,  # Purchases added separately
+            sales_quantity=total_base_units_sold,
+            closing_stock=0  # Will be calculated
+        )
 
-    # Calculate total purchases for the day
-    purchase_total = sum(purchase.total_cost for purchase in daily_purchases)
+        daily_stock.calculate_closing_stock()
+        db.session.add(daily_stock)
+        db.session.flush()
 
-    # Get active products for the purchase form dropdown
-    active_products = Product.query.join(Category).filter(
-        Category.is_active == True
-    ).order_by(Category.name, Product.name).all()
-
-    return render_template('stock/daily_stock.html',
-                           stock_data=processed_stock_data,
-                           selected_date=selected_date,
-                           stick_to_date=stick_to_date,
-                           daily_purchases=daily_purchases,
-                           purchase_total=purchase_total,
-                           active_products=active_products,
-                           today=date.today())
+    return daily_stock
 
 
 @app.route('/add_stock_purchase', methods=['POST'])
 @admin_required
 def add_stock_purchase():
+    """FIXED VERSION - Stock purchase should NEVER affect opening stock"""
     try:
         # Check if we should return to a specific date
         return_date = request.form.get('return_date')
@@ -2127,13 +2058,14 @@ def add_stock_purchase():
         db.session.add(purchase)
         db.session.flush()
 
-        # Update product stock
+        # CRITICAL FIX: Update product stock FIRST
         product.add_stock(quantity)
 
-        # Update daily stock record
+        # THEN get or create daily stock record
+        # This ensures opening stock is correct (from previous day only)
         daily_stock = get_or_create_daily_stock(product_id, purchase_date)
 
-        # Recalculate total additions from all purchases
+        # Recalculate total additions from all purchases for this date
         total_purchase_additions = db.session.query(
             db.func.coalesce(db.func.sum(StockPurchase.quantity), 0)
         ).filter(
@@ -2141,9 +2073,12 @@ def add_stock_purchase():
             StockPurchase.purchase_date == purchase_date
         ).scalar() or 0
 
-        # Update daily stock
+        # CRITICAL: Only update additions, NEVER touch opening_stock here
         daily_stock.additions = total_purchase_additions
+
+        # Recalculate closing stock: opening + additions - sales
         daily_stock.calculate_closing_stock()
+
         daily_stock.updated_by = current_user.id
         daily_stock.updated_at = datetime.now(timezone.utc)
 
@@ -2180,28 +2115,430 @@ def add_stock_purchase():
         return redirect(url_for('daily_stock', date=redirect_date))
 
 
-@app.route('/stock_purchases')
-@admin_required
-def stock_purchases():
-    """View all stock purchases"""
+@app.route('/daily_stock')
+@login_required
+def daily_stock():
+    """FIXED VERSION - Better stock calculation logic"""
     selected_date_str = request.args.get('date', date.today().strftime('%Y-%m-%d'))
     try:
         selected_date = datetime.strptime(selected_date_str, '%Y-%m-%d').date()
     except ValueError:
         selected_date = date.today()
 
+    # Check if a specific date was requested (not today)
+    stick_to_date = selected_date_str != date.today().strftime('%Y-%m-%d')
+
+    # Get stock data
+    stock_data = db.session.query(Product, Category, DailyStock).select_from(Product) \
+        .join(Category, Product.category_id == Category.id) \
+        .outerjoin(DailyStock, (Product.id == DailyStock.product_id) & (DailyStock.date == selected_date)) \
+        .order_by(Category.name, Product.name).all()
+
+    processed_stock_data = []
+    for product, category, daily_stock in stock_data:
+        if not daily_stock:
+            # Create temporary stock record with correct logic
+            temp_stock = DailyStock(product_id=product.id, date=selected_date)
+
+            # Get previous day's closing stock (this is the ONLY source for opening)
+            previous_date = selected_date - timedelta(days=1)
+            previous_stock = DailyStock.query.filter_by(
+                product_id=product.id,
+                date=previous_date
+            ).first()
+
+            # CRITICAL FIX: Opening stock comes ONLY from previous day
+            if previous_stock:
+                temp_stock.opening_stock = previous_stock.closing_stock
+            else:
+                # If no previous record exists, use current product stock as baseline
+                # This handles the initial setup or gaps in records
+                temp_stock.opening_stock = product.current_stock
+
+            # Calculate additions from purchases ONLY (separate from opening)
+            purchase_additions = db.session.query(
+                db.func.coalesce(db.func.sum(StockPurchase.quantity), 0)
+            ).filter(
+                StockPurchase.product_id == product.id,
+                StockPurchase.purchase_date == selected_date
+            ).scalar() or 0
+
+            temp_stock.additions = purchase_additions
+
+            # Calculate sales in base units for this date
+            total_base_units_sold = db.session.query(
+                db.func.coalesce(db.func.sum(Sale.quantity * ProductVariant.conversion_factor), 0)
+            ).join(ProductVariant, Sale.variant_id == ProductVariant.id).filter(
+                ProductVariant.product_id == product.id,
+                Sale.sale_date == selected_date
+            ).scalar() or 0
+
+            temp_stock.sales_quantity = total_base_units_sold
+
+            # Calculate closing: opening + additions - sales
+            temp_stock.calculate_closing_stock()
+            daily_stock = temp_stock
+        else:
+            # Verify and sync existing record
+            purchase_additions = db.session.query(
+                db.func.coalesce(db.func.sum(StockPurchase.quantity), 0)
+            ).filter(
+                StockPurchase.product_id == product.id,
+                StockPurchase.purchase_date == selected_date
+            ).scalar() or 0
+
+            # CRITICAL: If additions don't match actual purchases, sync them
+            if daily_stock.additions != purchase_additions:
+                daily_stock.additions = purchase_additions
+                daily_stock.calculate_closing_stock()
+
+            # CRITICAL: Verify opening stock is correct (should match previous closing)
+            previous_date = selected_date - timedelta(days=1)
+            previous_stock = DailyStock.query.filter_by(
+                product_id=product.id,
+                date=previous_date
+            ).first()
+
+            if previous_stock and daily_stock.opening_stock != previous_stock.closing_stock:
+                # Log the discrepancy
+                app.logger.warning(
+                    f"Opening stock mismatch for {product.name} on {selected_date}: "
+                    f"Expected {previous_stock.closing_stock}, got {daily_stock.opening_stock}"
+                )
+
+        processed_stock_data.append((product, category, daily_stock))
+
+    # Get purchases for this date
+    daily_purchases = StockPurchase.query.filter_by(
+        purchase_date=selected_date
+    ).order_by(StockPurchase.timestamp.desc()).all()
+
+    # Calculate total purchases for the day
+    purchase_total = sum(purchase.total_cost for purchase in daily_purchases)
+
+    # Get active products for the purchase form dropdown
+    active_products = Product.query.join(Category).filter(
+        Category.is_active == True
+    ).order_by(Category.name, Product.name).all()
+
+    return render_template('stock/daily_stock.html',
+                           stock_data=processed_stock_data,
+                           selected_date=selected_date,
+                           stick_to_date=stick_to_date,
+                           daily_purchases=daily_purchases,
+                           purchase_total=purchase_total,
+                           active_products=active_products,
+                           today=date.today())
+
+
+@app.route('/update_stock', methods=['POST'])
+@admin_required
+def update_stock():
+    """Update daily stock opening balance - FIXED VERSION"""
+    try:
+        data = request.get_json()
+        product_id = data.get('product_id')
+        date_str = data.get('date')
+        opening_stock = safe_float(data.get('opening_stock'))
+
+        current_user = get_current_user()
+
+        if not all([product_id, date_str]):
+            return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+
+        # Parse date
+        try:
+            stock_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid date format'}), 400
+
+        # Get or create daily stock
+        daily_stock = get_or_create_daily_stock(product_id, stock_date)
+        old_values = daily_stock.to_dict()
+
+        # CRITICAL FIX: When manually adjusting opening stock,
+        # we should log this as a correction, not a normal operation
+        daily_stock.opening_stock = opening_stock
+        daily_stock.updated_by = current_user.id
+        daily_stock.updated_at = datetime.now(timezone.utc)
+
+        # Recalculate closing stock based on new opening
+        # Closing = Opening + Additions - Sales
+        daily_stock.calculate_closing_stock()
+
+        new_values = daily_stock.to_dict()
+        changes_summary = get_changes_summary(old_values, new_values)
+
+        # Create audit log
+        create_audit_log(
+            action='UPDATE',
+            table_name='daily_stock',
+            record_id=daily_stock.id,
+            old_values=old_values,
+            new_values=new_values,
+            changes_summary=f"Manual opening stock adjustment for {daily_stock.product.name} on {stock_date} - {changes_summary}"
+        )
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': 'Opening stock updated successfully',
+            'closing_stock': daily_stock.closing_stock,
+            'warning': 'Opening stock manually adjusted. This should only be done to correct errors.'
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error updating stock: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# Add these routes to app.py
+
+@app.route('/stock_overview')
+@admin_required
+def stock_overview():
+    """Comprehensive stock overview and valuation"""
+
+    # Get all products with their stock
+    products = Product.query.join(Category).filter(Category.is_active == True).all()
+
+    # Initialize statistics
+    stock_stats = {
+        'total_stock_value': 0,
+        'potential_revenue': 0,
+        'potential_profit': 0,
+        'profit_margin': 0,
+        'total_units': 0,
+        'total_products': len(products),
+        'active_products': len([p for p in products if p.current_stock > 0]),
+        'low_stock_count': 0,
+        'low_stock_value': 0,
+        'out_of_stock_count': 0,
+        'good_stock_count': 0,
+        'good_stock_value': 0
+    }
+
+    # Calculate stock by category
+    stock_by_category = []
+    category_data = {}
+
+    for product in products:
+        stock = product.get_available_stock()
+        stock_value = stock * product.base_buying_price
+
+        # Calculate potential revenue from variants
+        variants = product.get_active_variants()
+        if variants:
+            avg_selling_price = sum(v.selling_price * v.conversion_factor for v in variants) / len(variants)
+            potential_revenue = stock * avg_selling_price
+        else:
+            potential_revenue = 0
+
+        potential_profit = potential_revenue - stock_value
+
+        # Update totals
+        stock_stats['total_stock_value'] += stock_value
+        stock_stats['potential_revenue'] += potential_revenue
+        stock_stats['potential_profit'] += potential_profit
+        stock_stats['total_units'] += stock
+
+        # Stock status
+        if stock <= 0:
+            stock_stats['out_of_stock_count'] += 1
+        elif stock <= product.min_stock_level:
+            stock_stats['low_stock_count'] += 1
+            stock_stats['low_stock_value'] += stock_value
+        else:
+            stock_stats['good_stock_count'] += 1
+            stock_stats['good_stock_value'] += stock_value
+
+        # Group by category
+        cat_name = product.category.name
+        if cat_name not in category_data:
+            category_data[cat_name] = {
+                'name': cat_name,
+                'product_count': 0,
+                'total_units': 0,
+                'stock_value': 0,
+                'potential_revenue': 0,
+                'potential_profit': 0
+            }
+
+        category_data[cat_name]['product_count'] += 1
+        category_data[cat_name]['total_units'] += stock
+        category_data[cat_name]['stock_value'] += stock_value
+        category_data[cat_name]['potential_revenue'] += potential_revenue
+        category_data[cat_name]['potential_profit'] += potential_profit
+
+    # Calculate profit margin
+    if stock_stats['potential_revenue'] > 0:
+        stock_stats['profit_margin'] = (stock_stats['potential_profit'] / stock_stats['potential_revenue']) * 100
+
+    # Convert category data to sorted list
+    stock_by_category = sorted(category_data.values(), key=lambda x: x['stock_value'], reverse=True)
+
+    # Top 10 most valuable products
+    top_products = []
+    for product in products:
+        stock = product.get_available_stock()
+        if stock > 0:
+            stock_value = stock * product.base_buying_price
+            variants = product.get_active_variants()
+            avg_selling_price = sum(v.selling_price * v.conversion_factor for v in variants) / len(
+                variants) if variants else 0
+            potential_revenue = stock * avg_selling_price
+            potential_profit = potential_revenue - stock_value
+
+            top_products.append({
+                'id': product.id,
+                'name': product.name,
+                'category': product.category.name,
+                'stock': stock,
+                'base_unit': product.base_unit,
+                'cost_per_unit': product.base_buying_price,
+                'stock_value': stock_value,
+                'avg_selling_price': avg_selling_price,
+                'potential_revenue': potential_revenue,
+                'potential_profit': potential_profit,
+                'min_stock': product.min_stock_level
+            })
+
+    top_products = sorted(top_products, key=lambda x: x['stock_value'], reverse=True)[:10]
+
+    # Get low stock and out of stock products
+    low_stock_products = Product.query.filter(
+        Product.current_stock > 0,
+        Product.current_stock <= Product.min_stock_level
+    ).order_by(Product.current_stock.asc()).all()
+
+    out_of_stock_products = Product.query.filter(
+        Product.current_stock <= 0
+    ).order_by(Product.name).all()
+
+    # Prepare chart data
+    category_chart_data = {
+        'labels': [cat['name'] for cat in stock_by_category],
+        'values': [cat['stock_value'] for cat in stock_by_category]
+    }
+
+    return render_template('stock/stock_overview.html',
+                           stock_stats=stock_stats,
+                           stock_by_category=stock_by_category,
+                           top_products=top_products,
+                           low_stock_products=low_stock_products,
+                           out_of_stock_products=out_of_stock_products,
+                           category_chart_data=category_chart_data,
+                           now=datetime.now())
+
+
+# Update the stock_purchases route to include overall stats
+@app.route('/stock_purchases')
+@admin_required
+def stock_purchases():
+    """View all stock purchases with statistics"""
+    selected_date_str = request.args.get('date', date.today().strftime('%Y-%m-%d'))
+    try:
+        selected_date = datetime.strptime(selected_date_str, '%Y-%m-%d').date()
+    except ValueError:
+        selected_date = date.today()
+
+    # Get purchases for the selected date
     purchases = StockPurchase.query.filter_by(
         purchase_date=selected_date
     ).order_by(StockPurchase.timestamp.desc()).all()
 
+    # Calculate DAILY purchase statistics
+    purchase_stats = {
+        'total_value': 0,
+        'total_units': 0,
+        'avg_unit_cost': 0,
+        'unique_products': 0,
+        'unique_suppliers': 0,
+        'highest_purchase': 0,
+        'potential_revenue': 0,
+        'top_products_by_value': [],
+        'top_products_by_quantity': []
+    }
+
+    if purchases:
+        purchase_stats['total_value'] = sum(p.total_cost for p in purchases)
+        purchase_stats['total_units'] = sum(p.quantity for p in purchases)
+        purchase_stats['avg_unit_cost'] = (purchase_stats['total_value'] / purchase_stats['total_units']) if \
+        purchase_stats['total_units'] > 0 else 0
+        purchase_stats['unique_products'] = len(set(p.product_id for p in purchases))
+        purchase_stats['unique_suppliers'] = len(set(p.supplier_name for p in purchases if p.supplier_name))
+        purchase_stats['highest_purchase'] = max(p.total_cost for p in purchases)
+
+        # Calculate potential revenue
+        potential_revenue = 0
+        for purchase in purchases:
+            variants = purchase.product.get_active_variants()
+            if variants:
+                avg_selling_price = sum(v.selling_price * v.conversion_factor for v in variants) / len(variants)
+                potential_revenue += purchase.quantity * avg_selling_price
+        purchase_stats['potential_revenue'] = potential_revenue
+
+        # Group by product
+        from collections import defaultdict
+        product_data = defaultdict(lambda: {'total_cost': 0, 'total_quantity': 0, 'name': ''})
+
+        for purchase in purchases:
+            product_id = purchase.product_id
+            product_data[product_id]['total_cost'] += purchase.total_cost
+            product_data[product_id]['total_quantity'] += purchase.quantity
+            product_data[product_id]['name'] = purchase.product.name
+
+        product_list = [
+            {
+                'name': data['name'],
+                'total_cost': data['total_cost'],
+                'total_quantity': data['total_quantity']
+            }
+            for data in product_data.values()
+        ]
+
+        purchase_stats['top_products_by_value'] = sorted(product_list, key=lambda x: x['total_cost'], reverse=True)
+        purchase_stats['top_products_by_quantity'] = sorted(product_list, key=lambda x: x['total_quantity'],
+                                                            reverse=True)
+
+    # Calculate OVERALL stock statistics (for the summary card)
+    products = Product.query.join(Category).filter(Category.is_active == True).all()
+
+    overall_stock_stats = {
+        'total_stock_value': 0,
+        'potential_revenue': 0,
+        'potential_profit': 0
+    }
+
+    for product in products:
+        stock = product.get_available_stock()
+        stock_value = stock * product.base_buying_price
+
+        variants = product.get_active_variants()
+        if variants:
+            avg_selling_price = sum(v.selling_price * v.conversion_factor for v in variants) / len(variants)
+            potential_revenue = stock * avg_selling_price
+        else:
+            potential_revenue = 0
+
+        overall_stock_stats['total_stock_value'] += stock_value
+        overall_stock_stats['potential_revenue'] += potential_revenue
+
+    overall_stock_stats['potential_profit'] = overall_stock_stats['potential_revenue'] - overall_stock_stats[
+        'total_stock_value']
+
+    # Get active products for dropdown
     products = Product.query.order_by(Product.name).all()
 
     return render_template('stock/stock_purchases.html',
                            purchases=purchases,
                            selected_date=selected_date,
                            products=products,
-                           today=date.today())
-
+                           today=date.today(),
+                           purchase_stats=purchase_stats,
+                           overall_stock_stats=overall_stock_stats)
 
 @app.route('/edit_stock_purchase/<int:purchase_id>', methods=['GET', 'POST'])
 @admin_required
@@ -2353,64 +2690,6 @@ def delete_stock_purchase(purchase_id):
     return redirect(url_for('stock_purchases'))
 
 
-@app.route('/update_stock', methods=['POST'])
-@admin_required
-def update_stock():
-    """Update daily stock opening balance"""
-    try:
-        data = request.get_json()
-        product_id = data.get('product_id')
-        date_str = data.get('date')
-        opening_stock = safe_float(data.get('opening_stock'))
-
-        current_user = get_current_user()
-
-        if not all([product_id, date_str]):
-            return jsonify({'success': False, 'error': 'Missing required fields'}), 400
-
-        # Parse date
-        try:
-            stock_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-        except ValueError:
-            return jsonify({'success': False, 'error': 'Invalid date format'}), 400
-
-        # Get or create daily stock
-        daily_stock = get_or_create_daily_stock(product_id, stock_date)
-        old_values = daily_stock.to_dict()
-
-        # Update opening stock
-        daily_stock.opening_stock = opening_stock
-        daily_stock.updated_by = current_user.id
-        daily_stock.updated_at = datetime.now(timezone.utc)
-
-        # Recalculate closing stock
-        daily_stock.calculate_closing_stock()
-
-        new_values = daily_stock.to_dict()
-        changes_summary = get_changes_summary(old_values, new_values)
-
-        # Create audit log
-        create_audit_log(
-            action='UPDATE',
-            table_name='daily_stock',
-            record_id=daily_stock.id,
-            old_values=old_values,
-            new_values=new_values,
-            changes_summary=f"Opening stock adjusted for {daily_stock.product.name} on {stock_date} - {changes_summary}"
-        )
-
-        db.session.commit()
-
-        return jsonify({
-            'success': True,
-            'message': 'Stock updated successfully',
-            'closing_stock': daily_stock.closing_stock
-        })
-
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Error updating stock: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)}), 500
 
         
 # EXPENSES ROUTES
