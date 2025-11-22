@@ -1,202 +1,545 @@
 """
-Excel Data Import Script for LiquorPro System - November 6, 2025
-Imports stock data from the Excel sheet into the database
-Date: November 6, 2025
-
-IMPORTANT: Updates existing products with November 6th data
-Each size (750ML, 250ML, etc.) is a SEPARATE PRODUCT
+Complete November Data Import Script for LiquorPro System
+Imports stock data from November 1-6, 2025
+Accurately reflects all data from the PDF including:
+- Fractional quantities
+- Variable selling prices
+- All missing products
+- Correct tots handling
+Date: November 22, 2025
 """
 
 from app import app, db
 from models import (User, Category, Size, Product, ProductVariant,
-                   Sale, DailyStock, StockPurchase, Expense, ExpenseCategory)
+                   Sale, DailyStock, StockPurchase, Expense, ExpenseCategory, DailySummary)
 from datetime import datetime, date
-import re
+from decimal import Decimal
 
-# Data from the Excel file (November 6, 2025)
-IMPORT_DATE = date(2025, 11, 6)
-
-# Excel data structure: [Product Name, Category, Opening Stock, Additions, Sales, Selling Price, Buying Price]
-PRODUCTS_DATA = [
-    # BEERS
-    ("Snapp", "Beers", 0, 0, 0, 250, 181),
-    ("Guarana", "Beers", 22, 0, 0, 250, 181),
-    ("Black Ice", "Beers", 19, 0, 0, 250, 181),
-    ("Pineapple Punch", "Beers", 19, 0, 0, 250, 181),
-    ("Tusker Malt", "Beers", 0, 0, 0, 250, 247),
-    ("Heineken", "Beers", 0, 0, 0, 350, 287),
-    ("Tusker Lager", "Beers", 21, 0, 1, 280, 203),
-    ("Faxe", "Beers", 0, 0, 0, 320, 263),
-    ("Martens Beer", "Beers", 10, 0, 0, 350, 263),
-    ("Tusker Lite", "Beers", 0, 0, 0, 250, 247),
-    ("Guinness", "Beers", 22, 0, 0, 300, 220),
-    ("Kingfisher", "Beers", 0, 0, 0, 250, 192),
-    ("Hunters Gold", "Beers", 0, 0, 0, 250, 203),
-    ("Balozi", "Beers", 21, 0, 0, 300, 203),
-    ("Pilsner", "Beers", 0, 0, 0, 300, 203),
-    ("Whitecap", "Beers", 18, 0, 0, 300, 220),
-    ("Savannah", "Beers", 0, 0, 0, 200, 240),
-    ("KO", "Beers", 10, 0, 0, 300, 220),
-    ("Tusker Cider", "Beers", 16, 0, 1, 300, 241),
-    ("Banana Beer", "Beers", 33, 0, 1, 130, 72),
-
-    # SPIRITS - 1 LITRE
-    ("Flirt Vodka 1L", "Spirits", 1, 0, 0, 1700, 1030),
-    ("Ballantines 1L", "Spirits", 2, 0, 0, 3600, 2679),
-    ("Double Black 1L", "Spirits", 2, 0, 0, 6800, 5550),
-    ("J&B 1L", "Spirits", 2, 0, 0, 2700, 2017),
-    ("Red Label 1L", "Spirits", 3, 0, 0, 2500, 2050),
-    ("Black Label 1L", "Spirits", 5, 0, 0, 4500, 3810),
-    ("Black & White 1L", "Spirits", 4, 0, 0, 2000, 1525),
-    ("Jagermeister 1L", "Spirits", 2, 0, 0, 3700, 3100),
-    ("Jameson 1L", "Spirits", 3, 0, 0, 3700, 3024),
-    ("Gordons 1L", "Spirits", 0, 0, 0, 0, 2348),
-    ("Jack Daniels 1L", "Spirits", 3, 0, 0, 4500, 3850),
-    ("Baileys Original 1L", "Spirits", 0, 0, 0, 3600, 2720),
-    ("Captain Morgan Spiced 1L", "Spirits", 5, 0, 0, 2800, 2184),
-    ("Captain Morgan Gold 1L", "Spirits", 0, 0, 0, 2500, 2184),
-    ("Malibu 1L", "Spirits", 2, 0, 0, 2500, 1575),
-    ("Absolut Vodka 1L", "Spirits", 0, 0, 0, 0, 2577),
-    ("4th Street 1.5L", "Spirits", 1, 0, 0, 2000, 1680),
-    ("8PM 1L", "Spirits", 4, 0, 0, 1300, 1000),
-    ("Jim Beam 1L", "Spirits", 2, 0, 0, 2600, 2415),
-
-    # SPIRITS - 750ML
-    ("Black & White 750ML", "Spirits", 3, 0, 0, 1500, 1155),
-    ("Jim Beam 750ML", "Spirits", 2, 0, 0, 1700, 2195),
-    ("Black Label 750ML", "Spirits", 3, 0, 0, 3600, 3077),
-    ("Baileys Original 750ML", "Spirits", 0, 0, 0, 2600, 2225),
-    ("Jameson 750ML", "Spirits", 4, 0, 0, 2750, 2268),
-    ("Jagermeister 750ML", "Spirits", 2, 0, 0, 3200, 2365),
-    ("Red Label 750ML", "Spirits", 3, 0, 0, 2000, 1648),
-    ("Malibu 750ML", "Spirits", 3, 0, 0, 2200, 1563),
-    ("4th Street 750ML", "Spirits", 3, 0, 0, 1200, 915),
-    ("J&B 750ML", "Spirits", 1, 0, 0, 2400, 1932),
-    ("Captain Morgan 750ML", "Spirits", 5, 0, 0, 1300, 948),
-    ("Grants 750ML", "Spirits", 6, 0, 0, 2200, 1738),
-    ("Kibao 750ML", "Spirits", 10, 0, 0, 850, 649),
-    ("Kenya Cane 750ML", "Spirits", 1, 0, 1, 1000, 692),
-    ("Kenya Cane Pineapple 750ML", "Spirits", 18, 0, 2, 1000, 692),
-    ("Smirnoff 750ML", "Spirits", 10, 0, 0, 1600, 1277),
-    ("Kenya King 750ML", "Spirits", 3, 0, 0, 800, 616),
-    ("Jack Daniels 750ML", "Spirits", 4, 0, 0, 3500, 3100),
-    ("Four Cousins 750ML", "Spirits", 6, 0, 0, 1200, 920),
-    ("Famous Grouse 750ML", "Spirits", 2, 0, 0, 2500, 1875),
-    ("Konyagi 750ML", "Spirits", 8, 0, 0, 1100, 803),
-    ("Konyagi 500ML", "Spirits", 10, 0, 0, 700, 572),
-    ("Chrome Gin 750ML", "Spirits", 8, 0, 0, 800, 577),
-    ("Chrome Vodka 750ML", "Spirits", 8, 0, 0, 800, 577),
-    ("Best Whisky 750ML", "Spirits", 6, 0, 0, 1100, 922),
-    ("Best Gin 750ML", "Spirits", 12, 0, 0, 950, 743),
-    ("Best Cream 750ML", "Spirits", 0, 0, 0, 1200, 999),
-    ("Origin 750ML", "Spirits", 9, 0, 0, 850, 626),
-    ("Kane Extra 750ML", "Spirits", 4, 0, 0, 800, 593),
-    ("All Seasons 750ML", "Spirits", 8, 0, 0, 1300, 1050),
-    ("VAT 69 750ML", "Spirits", 4, 0, 0, 1600, 1442),
-    ("Chamdor 750ML", "Spirits", 0, 0, 0, 1000, 747),
-    ("Hennessy 750ML", "Spirits", 1, 0, 0, 6200, 5200),
-    ("Martell 750ML", "Spirits", 1, 0, 0, 5800, 4500),
-    ("Amarula 750ML", "Spirits", 0, 0, 0, 2200, 2060),
-    ("Chivas Regal 750ML", "Spirits", 1, 0, 0, 3850, 3682),
-    ("Ballantines 750ML", "Spirits", 3, 0, 0, 2500, 2009),
-    ("Bacardi 750ML", "Spirits", 3, 0, 0, 2000, 1700),
-    ("Viceroy 750ML", "Spirits", 4, 0, 0, 1600, 1265),
-    ("Drostdy Hof 750ML", "Spirits", 0, 0, 0, 1200, 930),
-    ("Richot 750ML", "Spirits", 3, 0, 0, 1600, 1277),
-    ("Gilbeys 750ML", "Spirits", 6, 0, 0, 1600, 1277),
-    ("Bond 7 750ML", "Spirits", 3, 0, 0, 1600, 1277),
-    ("Beefeaters Gin Pink 750ML", "Spirits", 2, 0, 0, 3000, 2733),
-    ("Beefeaters Gin 750ML", "Spirits", 2, 0, 0, 3300, 2570),
-    ("Gordons Gin Pink 750ML", "Spirits", 0, 0, 0, 2200, 1895),
-    ("Gordons Gin 750ML", "Spirits", 2, 0, 0, 2300, 1977),
-    ("Hunters Choice 750ML", "Spirits", 6, 0, 0, 1300, 922),
-    ("8PM 750ML", "Spirits", 0, 0, 0, 1300, 922),
-    ("Caprice White 750ML", "Wines", 4, 0, 0, 1000, 743),
-    ("Caprice Red 750ML", "Wines", 2, 0, 0, 1000, 743),
-    ("Casabuena White 750ML", "Wines", 0, 0, 0, 1000, 711),
-    ("Casabuena Red 750ML", "Wines", 0, 0, 0, 1000, 711),
-    ("Absolut Vodka 750ML", "Spirits", 2, 0, 0, 2400, 1853),
-    ("County 750ML", "Spirits", 12, 0, 0, 850, 662),
-    ("Old Monk 750ML", "Spirits", 3, 0, 0, 1200, 1050),
-    ("Robertson Wine 750ML", "Wines", 2, 0, 0, 1200, 1050),
-    ("General Meakins 750ML", "Spirits", 4, 0, 0, 850, 635),
-
-    # SPIRITS - 350ML
-    ("VAT 69 350ML", "Spirits", 4, 0, 0, 1000, 783),
-    ("Amarula 350ML", "Spirits", 0, 0, 0, 1200, 1185),
-    ("All Seasons 350ML", "Spirits", 4, 0, 0, 750, 535),
-    ("Viceroy 350ML", "Spirits", 8, 0, 0, 900, 783),
-    ("Grants 350ML", "Spirits", 0, 0, 0, 1000, 885),
-    ("Richot 350ML", "Spirits", 5, 0, 0, 900, 593),
-    ("William Lawson 350ML", "Spirits", 2, 0, 0, 1000, 759),
-    ("Kibao 350ML", "Spirits", 10, 0, 0, 600, 350),
-    ("Black & White 350ML", "Spirits", 5, 0, 0, 800, 593),
-    ("Jack Daniels 350ML", "Spirits", 1, 0, 0, 2000, 1640),
-    ("Gilbeys 350ML", "Spirits", 8, 0, 0, 800, 593),
-    ("Smirnoff 350ML", "Spirits", 14, 0, 0, 700, 593),
-    ("Kenya Cane Pineapple 350ML", "Spirits", 0, 0, 0, 450, 0),
-    ("Kenya Cane 350ML", "Spirits", 10, 0, 0, 650, 363),
-    ("Jameson 350ML", "Spirits", 7, 0, 1, 1400, 1133),
-    ("Hunters Choice 350ML", "Spirits", 12, 0, 0, 650, 437),
-    ("58 Gin 350ML", "Spirits", 8, 0, 0, 800, 366),
-
-    # SPIRITS - 250ML
-    ("All Seasons 250ML", "Spirits", 10, 0, 0, 500, 365),
-    ("Kenya Cane 250ML", "Spirits", 64, 0, 10, 350, 264),
-    ("Kenya Cane Pineapple 250ML", "Spirits", 0, 0, 0, 380, 264),
-    ("Smirnoff 250ML", "Spirits", 15, 0, 0, 550, 429),
-    ("Best Gin 250ML", "Spirits", 18, 0, 0, 350, 265),
-    ("Best Whisky 250ML", "Spirits", 16, 0, 0, 400, 318),
-    ("General Meakins 250ML", "Spirits", 62, 0, 0, 300, 217),
-    ("Blue Ice 250ML", "Spirits", 135, 0, 12.5, 200, 155),
-    ("Origin 250ML", "Spirits", 15, 0, 0, 300, 239),
-    ("County 250ML", "Spirits", 53.5, 0, 2.5, 300, 239),
-    ("Chrome Lemon 250ML", "Spirits", 15, 0, 0, 300, 239),
-    ("Chrome Gin 250ML", "Spirits", 116.5, 0, 2, 300, 214),
-    ("Best Cream 250ML", "Spirits", 3, 0, 0, 500, 326),
-    ("Napoleon 250ML", "Spirits", 15, 0, 0, 300, 217),
-    ("Konyagi 250ML", "Spirits", 13, 0, 0, 350, 286),
-    ("Hunters Choice 250ML", "Spirits", 20, 0, 0, 400, 303),
-    ("Gilbeys 250ML", "Spirits", 21, 0, 0, 550, 429),
-    ("Triple Ace 250ML", "Spirits", 15.5, 0, 0, 300, 217),
-    ("Viceroy 250ML", "Spirits", 8, 0, 1, 550, 443),
-    ("VAT 69 250ML", "Spirits", 0, 0, 0, 600, 305),
-    ("Richot 250ML", "Spirits", 9, 0, 0, 550, 429),
-    ("Captain Morgan 250ML", "Spirits", 10, 0, 0, 450, 346),
-    ("V&A 250ML", "Spirits", 10, 0, 0, 450, 305),
-    ("White Pearl 250ML", "Spirits", 10, 0, 0, 300, 227),
-    ("Caribia 250ML", "Spirits", 10, 0, 0, 350, 230),
-    ("Liberty 250ML", "Spirits", 8, 0, 3.5, 300, 230),
-    ("Kibao 250ML", "Spirits", 57, 0, 4.5, 300, 230),
-    ("Kane Extra 250ML", "Spirits", 15, 0, 0, 300, 214),
-    ("Bond 7 250ML", "Spirits", 5, 0, 0, 550, 429),
-
-    # SOFT DRINKS
-    ("Delmonte", "Soft Drinks", 12, 0, 0, 300, 252),
-    ("Predator", "Soft Drinks", 19, 0, 4, 70, 27),
-    ("Lemonade", "Soft Drinks", 31, 0, 1, 50, 11),
-    ("Redbull", "Soft Drinks", 2, 0, 0, 250, 184),
-    ("Powerplay", "Soft Drinks", 15, 0, 0, 70, 27),
-    ("Monster", "Soft Drinks", 1, 0, 0, 300, 252),
-    ("Soda 2L", "Soft Drinks", 0, 0, 0, 200, 158),
-    ("Soda 1L", "Soft Drinks", 0, 0, 0, 100, 158),
-    ("Soda 1.25L", "Soft Drinks", 20, 0, 0, 150, 58),
-    ("Soda 500ML", "Soft Drinks", 0, 0, 0, 50, 38),
-    ("Soda 350ML", "Soft Drinks", 80, 0, 3, 50, 41),
-    ("Minute Maid 400ML", "Soft Drinks", 38, 0, 5, 80, 33),
-    ("Minute Maid 1L", "Soft Drinks", 48, 0, 0, 150, 125),
-    ("Water 1L", "Soft Drinks", 16, 0, 0, 100, 39),
-    ("Water 500ML", "Soft Drinks", 15, 0, 0, 50, 22),
-    ("Novida", "Soft Drinks", 2, 0, 0, 50, 38),
-    ("Lime", "Soft Drinks", 0, 32, 1, 20, 10),
+# Import dates
+IMPORT_DATES = [
+    date(2025, 11, 1),
+    date(2025, 11, 2),
+    date(2025, 11, 3),
+    date(2025, 11, 4),
+    date(2025, 11, 5),
+    date(2025, 11, 6),
 ]
 
-# Additional expenses from the document
+# Structure: Product Name -> (Category, Buying Price, Daily Data)
+# Daily Data: [(opening, additions, sales, selling_price), ...]
+# selling_price can be None to use default price
+PRODUCTS_DATA = {
+    # BEERS
+    "Snapp": ("Beers", 181, 250, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Guarana": ("Beers", 181, 250, [
+        (15, 0, 3, None), (12, 0, 0, None), (12, 24, 2, None), (22, 0, 0, None), (22, 0, 0, None), (22, 0, 0, None)
+    ]),
+    "Black Ice": ("Beers", 181, 250, [
+        (19, 0, 0, None), (19, 0, 0, None), (19, 0, 0, None), (19, 0, 0, None), (19, 0, 0, None), (19, 0, 0, None)
+    ]),
+    "Pineapple Punch": ("Beers", 181, 250, [
+        (19, 0, 0, None), (19, 0, 0, None), (19, 0, 0, None), (19, 0, 0, None), (19, 0, 0, None), (19, 0, 0, None)
+    ]),
+    "Tusker Malt": ("Beers", 247, 250, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Heineken": ("Beers", 287, 350, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Tusker Lager": ("Beers", 203, 300, [
+        (19, 0, 0, None), (19, 0, 4, None), (15, 6, 0, None), (21, 0, 0, None), (21, 0, 0, None), (21, 0, 1, 280)
+    ]),
+    "Faxe": ("Beers", 263, 320, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Martens Beer": ("Beers", 263, 350, [
+        (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None)
+    ]),
+    "Tusker Lite": ("Beers", 247, 250, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Guinness": ("Beers", 220, 300, [
+        (22, 0, 0, None), (22, 0, 0, None), (22, 0, 0, None), (22, 0, 0, None), (22, 0, 0, None), (22, 0, 0, None)
+    ]),
+    "Kingfisher": ("Beers", 192, 250, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Hunters Gold": ("Beers", 203, 250, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Balozi": ("Beers", 203, 300, [
+        (15, 0, 0, None), (15, 0, 0, None), (15, 6, 0, None), (21, 0, 0, None), (21, 0, 0, None), (21, 0, 0, None)
+    ]),
+    "Pilsner": ("Beers", 203, 300, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Whitecap": ("Beers", 220, 300, [
+        (18, 0, 0, None), (18, 0, 0, None), (18, 0, 0, None), (18, 0, 0, None), (18, 0, 0, None), (18, 0, 0, None)
+    ]),
+    "Savannah": ("Beers", 240, 200, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "KO": ("Beers", 220, 300, [
+        (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None)
+    ]),
+    "Tusker Cider": ("Beers", 241, 300, [
+        (14, 0, 1, None), (13, 0, 1, None), (12, 6, 0, None), (18, 0, 1, None), (17, 0, 1, None), (16, 0, 1, None)
+    ]),
+    "Banana Beer": ("Beers", 72, 130, [
+        (33, 0, 0, None), (33, 0, 0, None), (33, 0, 0, None), (33, 0, 0, None), (33, 0, 0, None), (33, 0, 1, None)
+    ]),
+
+    # SPIRITS - 1 LITRE
+    "Flirt Vodka 1L": ("Spirits", 1030, 1700, [
+        (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None)
+    ]),
+    "Ballantines 1L": ("Spirits", 2679, 3600, [
+        (2, 0, 0, None), (3, 0, 1, None), (1, 1, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "Double Black 1L": ("Spirits", 5550, 6800, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "J&B 1L": ("Spirits", 2017, 2700, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "Red Label 1L": ("Spirits", 2050, 2500, [
+        (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None)
+    ]),
+    "Black Label 1L": ("Spirits", 3810, 4500, [
+        (5, 0, 0, None), (5, 0, 1, None), (4, 1, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None)
+    ]),
+    "Black & White 1L": ("Spirits", 1525, 2000, [
+        (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None)
+    ]),
+    "Jagermeister 1L": ("Spirits", 3100, 3700, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "Jameson 1L": ("Spirits", 3024, 3700, [
+        (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None)
+    ]),
+    "Gordons 1L": ("Spirits", 2348, 0, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Jack Daniels 1L": ("Spirits", 3850, 4500, [
+        (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None)
+    ]),
+    "Baileys Original 1L": ("Spirits", 2720, 3600, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Captain Morgan Spiced 1L": ("Spirits", 2184, 2800, [
+        (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None)
+    ]),
+    "Captain Morgan Gold 1L": ("Spirits", 2184, 2500, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Malibu 1L": ("Spirits", 1575, 2500, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "Absolut Vodka 1L": ("Spirits", 2577, 0, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "4th Street 1.5L": ("Spirits", 1680, 2000, [
+        (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None)
+    ]),
+    "8PM 1L": ("Spirits", 1000, 1300, [
+        (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None)
+    ]),
+    "Jim Beam 1L": ("Spirits", 2415, 2600, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+
+    # SPIRITS - 750ML
+    "Black & White 750ML": ("Spirits", 1155, 1500, [
+        (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None)
+    ]),
+    "Jim Beam 750ML": ("Spirits", 2195, 1700, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "Black Label 750ML": ("Spirits", 3077, 3600, [
+        (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None)
+    ]),
+    "Baileys Original 750ML": ("Spirits", 2225, 2600, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Jameson 750ML": ("Spirits", 2268, 2750, [
+        (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None)
+    ]),
+    "Jagermeister 750ML": ("Spirits", 2365, 3200, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "Red Label 750ML": ("Spirits", 1648, 2000, [
+        (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None)
+    ]),
+    "Malibu 750ML": ("Spirits", 1563, 2200, [
+        (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None)
+    ]),
+    "4th Street 750ML": ("Spirits", 915, 1200, [
+        (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None)
+    ]),
+    "J&B 750ML": ("Spirits", 1932, 2400, [
+        (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None)
+    ]),
+    "Captain Morgan 750ML": ("Spirits", 948, 1300, [
+        (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None)
+    ]),
+    "Grants 750ML": ("Spirits", 1738, 2200, [
+        (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None)
+    ]),
+    "Kibao 750ML": ("Spirits", 649, 850, [
+        (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None)
+    ]),
+    "Kenya Cane 750ML": ("Spirits", 692, 1000, [
+        (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None), (6, 5, 5, None), (1, 1, 1, None)
+    ]),
+    "Kenya Cane Pineapple 750ML": ("Spirits", 692, 1000, [
+        (15, 0, 4, None), (11, 0, 0, None), (11, 7, 0, None), (18, 0, 0, None), (18, 0, 0, None), (18, 0, 2, None)
+    ]),
+    "Smirnoff 750ML": ("Spirits", 1277, 1600, [
+        (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None)
+    ]),
+    "Kenya King 750ML": ("Spirits", 616, 800, [
+        (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None)
+    ]),
+    "Jack Daniels 750ML": ("Spirits", 3100, 3500, [
+        (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None)
+    ]),
+    "Four Cousins 750ML": ("Spirits", 920, 1200, [
+        (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None)
+    ]),
+    "Famous Grouse 750ML": ("Spirits", 1875, 2500, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "Konyagi 750ML": ("Spirits", 803, 1100, [
+        (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None)
+    ]),
+    "Konyagi 500ML": ("Spirits", 572, 700, [
+        (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None)
+    ]),
+    "Chrome Gin 750ML": ("Spirits", 577, 800, [
+        (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None)
+    ]),
+    "Chrome Vodka 750ML": ("Spirits", 577, 850, [
+        (11, 0, 0, None), (11, 0, 1, None), (10, 2, 0, None), (12, 0, 1, None), (11, 0, 3, 800), (8, 0, 0, None)
+    ]),
+    "Best Whisky 750ML": ("Spirits", 922, 1100, [
+        (7, 0, 0, None), (7, 0, 1, None), (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None)
+    ]),
+    "Best Gin 750ML": ("Spirits", 743, 950, [
+        (12, 0, 0, None), (12, 0, 0, None), (12, 0, 0, None), (12, 0, 0, None), (12, 0, 0, None), (12, 0, 0, None)
+    ]),
+    "Best Cream 750ML": ("Spirits", 999, 1200, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Origin 750ML": ("Spirits", 626, 850, [
+        (9, 0, 0, None), (9, 0, 0, None), (9, 0, 0, None), (9, 0, 0, None), (9, 0, 0, None), (9, 0, 0, None)
+    ]),
+    "Kane Extra 750ML": ("Spirits", 593, 800, [
+        (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None)
+    ]),
+    "All Seasons 750ML": ("Spirits", 1050, 1300, [
+        (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None)
+    ]),
+    "VAT 69 750ML": ("Spirits", 1442, 1600, [
+        (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None)
+    ]),
+    "Chamdor 750ML": ("Spirits", 747, 1000, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Hennessy 750ML": ("Spirits", 5200, 6200, [
+        (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None)
+    ]),
+    "Martell 750ML": ("Spirits", 4500, 5800, [
+        (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None)
+    ]),
+    "Amarula 750ML": ("Spirits", 2060, 2200, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Chivas Regal 750ML": ("Spirits", 3682, 3850, [
+        (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None)
+    ]),
+    "Ballantines 750ML": ("Spirits", 2009, 2500, [
+        (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None)
+    ]),
+    "Bacardi 750ML": ("Spirits", 1700, 2000, [
+        (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None)
+    ]),
+    "Viceroy 750ML": ("Spirits", 1265, 1600, [
+        (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None)
+    ]),
+    "Drostdy Hof 750ML": ("Spirits", 930, 1200, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Richot 750ML": ("Spirits", 1277, 1600, [
+        (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None)
+    ]),
+    "Gilbeys 750ML": ("Spirits", 1277, 1600, [
+        (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None)
+    ]),
+    "Bond 7 750ML": ("Spirits", 1277, 1600, [
+        (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None)
+    ]),
+    "Beefeaters Gin Pink 750ML": ("Spirits", 2733, 3000, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "Beefeaters Gin 750ML": ("Spirits", 2570, 3300, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "Gordons Gin Pink 750ML": ("Spirits", 1895, 2200, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Gordons Gin 750ML": ("Spirits", 1977, 2300, [
+        (2, 0, 1, None), (1, 2, 1, None), (1, 1, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "Hunters Choice 750ML": ("Spirits", 922, 1300, [
+        (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None), (6, 0, 0, None)
+    ]),
+    "8PM 750ML": ("Spirits", 922, 1300, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Caprice White 750ML": ("Wines", 743, 1000, [
+        (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None)
+    ]),
+    "Caprice Red 750ML": ("Wines", 743, 1000, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "Casabuena White 750ML": ("Wines", 711, 1000, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Casabuena Red 750ML": ("Wines", 711, 1000, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Absolut Vodka 750ML": ("Spirits", 1853, 2400, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "County 750ML": ("Spirits", 662, 850, [
+        (11, 0, 2, None), (9, 0, 0, None), (9, 3, 0, None), (12, 0, 0, None), (12, 0, 0, None), (12, 0, 0, None)
+    ]),
+    "Old Monk 750ML": ("Spirits", 1050, 1200, [
+        (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None)
+    ]),
+    "Robertson Wine 750ML": ("Wines", 1050, 1200, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "General Meakins 750ML": ("Spirits", 635, 800, [
+        (4, 0, 0, None), (4, 0, 1, 850), (3, 1, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None)
+    ]),
+
+    # SPIRITS - 350ML
+    "VAT 69 350ML": ("Spirits", 783, 1000, [
+        (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 1, None), (4, 0, 0, None)
+    ]),
+    "Amarula 350ML": ("Spirits", 1185, 1200, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "All Seasons 350ML": ("Spirits", 535, 750, [
+        (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None), (4, 0, 0, None)
+    ]),
+    "Viceroy 350ML": ("Spirits", 783, 900, [
+        (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None)
+    ]),
+    "Grants 350ML": ("Spirits", 885, 1000, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Richot 350ML": ("Spirits", 593, 900, [
+        (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None)
+    ]),
+    "William Lawson 350ML": ("Spirits", 759, 1000, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "Kibao 350ML": ("Spirits", 350, 600, [
+        (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None)
+    ]),
+    "Black & White 350ML": ("Spirits", 593, 800, [
+        (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None)
+    ]),
+    "Jack Daniels 350ML": ("Spirits", 1640, 2000, [
+        (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None)
+    ]),
+    "Gilbeys 350ML": ("Spirits", 593, 800, [
+        (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None)
+    ]),
+    "Smirnoff 350ML": ("Spirits", 593, 700, [
+        (14, 0, 0, None), (14, 0, 0, None), (14, 0, 0, None), (14, 0, 0, None), (14, 0, 0, None), (14, 0, 0, None)
+    ]),
+    "Kenya Cane Pineapple 350ML": ("Spirits", 0, 450, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Kenya Cane 350ML": ("Spirits", 363, 650, [
+        (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None)
+    ]),
+    "Jameson 350ML": ("Spirits", 1133, 1500, [
+        (7, 0, 0, None), (7, 0, 0, None), (7, 0, 0, None), (7, 0, 0, None), (7, 0, 0, None), (7, 0, 1, 1400)
+    ]),
+    "Hunters Choice 350ML": ("Spirits", 437, 650, [
+        (11, 0, 0, None), (11, 0, 0, None), (11, 1, 0, None), (12, 0, 0, None), (12, 0, 0, None), (12, 0, 0, None)
+    ]),
+    "58 Gin 350ML": ("Spirits", 366, 800, [
+        (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 0, None)
+    ]),
+
+    # SPIRITS - 250ML
+    "All Seasons 250ML": ("Spirits", 365, 500, [
+        (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None)
+    ]),
+    "Kenya Cane 250ML": ("Spirits", 264, 350, [
+        (47, 0, 8, None), (39, 0, 13, None), (26, 37, 11, None), (52, 25, 1, None), (76, 0, 12, None), (64, 0, 10, None)
+    ]),
+    "Kenya Cane Pineapple 250ML": ("Spirits", 264, 380, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Smirnoff 250ML": ("Spirits", 429, 550, [
+        (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None)
+    ]),
+    "Best Gin 250ML": ("Spirits", 265, 400, [
+        (18, 0, 0, None), (18, 0, 4, 350), (14, 4, 0, None), (18, 0, 0, None), (18, 0, 0, None), (18, 0, 0, None)
+    ]),
+    "Best Whisky 250ML": ("Spirits", 318, 450, [
+        (17, 0, 0, None), (17, 0, 1, 400), (16, 0, 0, None), (16, 0, 0, None), (16, 0, 0, None), (16, 0, 0, None)
+    ]),
+    "General Meakins 250ML": ("Spirits", 217, 300, [
+        (62, 0, 1, None), (61, 0, 2.5, None), (58.5, 5, 0.5, None), (63, 0, 1, None), (62, 0, 0, None), (62, 0, 0, None)
+    ]),
+    "Blue Ice 250ML": ("Spirits", 155, 200, [
+        (91.5, 0, 15.75, None), (75.75, 0, 7.75, None), (68, 100, 16.75, None), (151.25, 0, 7.25, None), (144, 0, 9, None), (135, 0, 12.5, None)
+    ]),
+    "Origin 250ML": ("Spirits", 239, 300, [
+        (15.5, 0, 0, None), (15.5, 0, 0, None), (15.5, 0, 0.5, None), (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None)
+    ]),
+    "County 250ML": ("Spirits", 239, 300, [
+        (65.5, 0, 2.5, None), (63, 0, 0.5, None), (62.5, 0, 4.5, None), (58, 0, 2, None), (56, 0, 2.5, None), (53.5, 0, 2.5, None)
+    ]),
+    "Chrome Lemon 250ML": ("Spirits", 239, 300, [
+        (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None)
+    ]),
+    "Chrome Gin 250ML": ("Spirits", 214, 300, [
+        (100, 0, 4, None), (96, 0, 6.5, None), (89.5, 41, 4, None), (126.5, 0, 1.5, None), (125, 0, 8.5, None), (116.5, 0, 2, None)
+    ]),
+    "Best Cream 250ML": ("Spirits", 326, 500, [
+        (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None), (3, 0, 0, None)
+    ]),
+    "Napoleon 250ML": ("Spirits", 217, 300, [
+        (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None)
+    ]),
+    "Konyagi 250ML": ("Spirits", 286, 350, [
+        (13, 0, 0, None), (13, 0, 0, None), (13, 1, 1, None), (13, 0, 0, None), (13, 0, 0, None), (13, 0, 0, None)
+    ]),
+    "Hunters Choice 250ML": ("Spirits", 303, 400, [
+        (19, 0, 0, None), (19, 0, 1, None), (18, 2, 0, None), (20, 0, 0, None), (20, 0, 0, None), (20, 0, 0, None)
+    ]),
+    "Gilbeys 250ML": ("Spirits", 429, 550, [
+        (21, 0, 0, None), (21, 0, 0, None), (21, 0, 0, None), (21, 0, 0, None), (21, 0, 0, None), (21, 0, 0, None)
+    ]),
+    "Triple Ace 250ML": ("Spirits", 217, 300, [
+        (13.5, 0, 0, None), (13.5, 0, 0, None), (13.5, 2, 0, None), (15.5, 0, 0, None), (15.5, 0, 0, None), (15.5, 0, 0, None)
+    ]),
+    "Viceroy 250ML": ("Spirits", 443, 550, [
+        (8, 0, 0, None), (8, 0, 1, None), (7, 1, 0, None), (8, 0, 0, None), (8, 0, 0, None), (8, 0, 1, None)
+    ]),
+    "VAT 69 250ML": ("Spirits", 305, 600, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Richot 250ML": ("Spirits", 429, 550, [
+        (9, 0, 0, None), (9, 0, 0, None), (9, 0, 0, None), (9, 0, 0, None), (9, 0, 0, None), (9, 0, 0, None)
+    ]),
+    "Captain Morgan 250ML": ("Spirits", 346, 450, [
+        (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None)
+    ]),
+    "V&A 250ML": ("Spirits", 305, 450, [
+        (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None)
+    ]),
+    "White Pearl 250ML": ("Spirits", 227, 300, [
+        (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None)
+    ]),
+    "Caribia 250ML": ("Spirits", 230, 350, [
+        (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None), (10, 0, 0, None)
+    ]),
+    "Liberty 250ML": ("Spirits", 230, 300, [
+        (6, 0, 0, None), (6, 0, 0, None), (6, 4, 0, None), (10, 0, 0.5, None), (9.5, 0, 1.5, None), (8, 0, 3.5, None)
+    ]),
+    "Kibao 250ML": ("Spirits", 230, 300, [
+        (63.5, 0, 2, None), (61.5, 0, 0, None), (61.5, 0, 1.5, None), (60, 0, 1.5, None), (58.5, 0, 1.5, None), (57, 0, 4.5, None)
+    ]),
+    "Kane Extra 250ML": ("Spirits", 214, 300, [
+        (19, 0, 0, None), (19, 0, 4, None), (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None)
+    ]),
+    "Bond 7 250ML": ("Spirits", 429, 550, [
+        (4, 0, 0, None), (4, 0, 0, None), (4, 1, 0, None), (5, 0, 0, None), (5, 0, 0, None), (5, 0, 0, None)
+    ]),
+
+    # SOFT DRINKS
+    "Delmonte": ("Soft Drinks", 252, 300, [
+        (12, 0, 0, None), (12, 0, 0, None), (12, 0, 0, None), (12, 0, 0, None), (12, 0, 0, None), (12, 0, 0, None)
+    ]),
+    "Predator": ("Soft Drinks", 27, 70, [
+        (31, 0, 4, None), (27, 0, 4, None), (23, 0, 0, None), (26, 0, 5, None), (21, 0, 2, None), (19, 0, 4, None)
+    ]),
+    "Lemonade": ("Soft Drinks", 11, 50, [
+        (22, 0, 0, None), (22, 0, 1, None), (21, 12, 0, None), (33, 0, 0, None), (33, 0, 2, None), (31, 0, 1, None)
+    ]),
+    "Redbull": ("Soft Drinks", 184, 250, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "Powerplay": ("Soft Drinks", 27, 70, [
+        (25, 0, 3, None), (22, 0, 5, None), (17, 0, 1, None), (16, 0, 1, None), (15, 0, 0, None), (15, 0, 0, None)
+    ]),
+    "Monster": ("Soft Drinks", 252, 300, [
+        (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None), (1, 0, 0, None)
+    ]),
+    "Soda 2L": ("Soft Drinks", 158, 200, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Soda 1L": ("Soft Drinks", 158, 100, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Soda 1.25L": ("Soft Drinks", 58, 150, [
+        (27, 0, 0, None), (27, 0, 5, None), (22, 0, 0, None), (22, 0, 0, None), (22, 0, 2, None), (20, 0, 0, None)
+    ]),
+    "Soda 500ML": ("Soft Drinks", 38, 50, [
+        (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None), (0, 0, 0, None)
+    ]),
+    "Soda 350ML": ("Soft Drinks", 41, 50, [
+        (102, 0, 6, None), (96, 0, 6, None), (90, 0, 2, None), (88, 0, 5, None), (83, 0, 3, None), (80, 0, 3, None)
+    ]),
+    "Minute Maid 400ML": ("Soft Drinks", 33, 80, [
+        (49, 0, 0, None), (49, 0, 3, None), (46, 0, 2, None), (44, 0, 2, None), (42, 0, 4, None), (38, 0, 5, None)
+    ]),
+    "Minute Maid 1L": ("Soft Drinks", 125, 150, [
+        (51, 0, 0, None), (51, 0, 3, None), (48, 0, 0, None), (48, 0, 0, None), (48, 0, 0, None), (48, 0, 0, None)
+    ]),
+    "Water 1L": ("Soft Drinks", 39, 100, [
+        (16, 0, 0, None), (16, 0, 0, None), (16, 0, 0, None), (16, 0, 0, None), (16, 0, 0, None), (16, 0, 0, None)
+    ]),
+    "Water 500ML": ("Soft Drinks", 22, 50, [
+        (20, 0, 2, None), (18, 0, 2, None), (16, 0, 1, None), (15, 0, 0, None), (15, 0, 0, None), (15, 0, 0, None)
+    ]),
+    "Novida": ("Soft Drinks", 38, 50, [
+        (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None), (2, 0, 0, None)
+    ]),
+    "Lime": ("Soft Drinks", 10, 10, [
+        (0, 32, 0, None), (0, 32, 0, None), (0, 32, 2, 20), (0, 32, 3, 20), (0, 32, 2, 20), (0, 32, 1, 20)
+    ]),
+}
+
+# Tots sales data - these are sold from County 750ML bottle at 50 KES per tot
+# Format: (date_index, quantity_sold)
+TOTS_SALES = [
+    (0, 6),   # Nov 1: 6 tots
+    (1, 0),   # Nov 2: 0 tots
+    (2, 1),   # Nov 3: 1 tot
+    (3, 0),   # Nov 4: 0 tots
+    (4, 0),   # Nov 5: 0 tots
+    (5, 0),   # Nov 6: 0 tots
+]
+
+# Expenses data - Format: [(date_index, description, amount, category), ...]
 EXPENSES_DATA = [
-    ("Police", 0, "Security"),  # Amount not specified in PDF
-    ("Tissue", 0, "General Expenses"),  # Amount not specified in PDF
-    ("Stocksheet", 0, "Office Supplies"),  # Amount not specified in PDF
-    ("Purchases", 0, "Stock Purchases"),  # Amount not specified in PDF
+    (0, "Tissue", 20, "General Expenses"),
+    (0, "Stocksheet", 50, "Office Supplies"),
+    (0, "Police", 150, "Security"),
+    (1, "Police", 250, "Security"),
+    (1, "Stocksheet", 50, "Office Supplies"),
 ]
 
 def get_or_create_category(name, description=None):
@@ -211,7 +554,6 @@ def get_or_create_category(name, description=None):
         )
         db.session.add(category)
         db.session.flush()
-        print(f"  ✓ Created category: {name}")
     return category
 
 def get_or_create_expense_category(name):
@@ -225,61 +567,51 @@ def get_or_create_expense_category(name):
         )
         db.session.add(category)
         db.session.flush()
-        print(f"  ✓ Created expense category: {name}")
     return category
 
-def update_product_stock_for_nov6(name, category, opening_stock, additions,
-                                   sales, selling_price, buying_price):
-    """
-    Update product stock for November 6th
-    Follows the exact flow of the Flask app
-    """
+def get_or_create_size(name, description, sort_order):
+    """Get or create a size"""
+    size = Size.query.filter_by(name=name).first()
+    if not size:
+        admin = User.query.filter_by(role='admin').first()
+        size = Size(
+            name=name,
+            description=description,
+            sort_order=sort_order,
+            created_by=admin.id if admin else None
+        )
+        db.session.add(size)
+        db.session.flush()
+    return size
+
+def import_product_daily_data(product_name, category_name, buying_price, default_selling_price, daily_data):
+    """Import a product and its daily stock movements with support for variable prices"""
     admin = User.query.filter_by(role='admin').first()
+    category = Category.query.filter_by(name=category_name).first()
 
-    # Calculate closing stock
-    closing_stock = opening_stock + additions - sales
-
-    # Clean product name
-    product_name = name.strip()
-
-    # Find existing product
+    # Get or create product
     product = Product.query.filter_by(name=product_name).first()
-
     if not product:
-        # Product doesn't exist - create it
+        # Calculate final closing stock from last day's data
+        last_day = daily_data[-1]
+        closing = Decimal(str(last_day[0])) + Decimal(str(last_day[1])) - Decimal(str(last_day[2]))
+
         product = Product(
             name=product_name,
             category_id=category.id,
             base_unit='bottle',
             base_buying_price=buying_price,
-            current_stock=closing_stock,
+            current_stock=float(closing),
             min_stock_level=5,
             created_by=admin.id if admin else None,
             last_stock_update=datetime.now()
         )
         db.session.add(product)
         db.session.flush()
-        print(f"  ✓ Created NEW product: {product_name}")
-    else:
-        # Update existing product
-        product.current_stock = closing_stock
-        product.base_buying_price = buying_price
-        product.last_stock_update = datetime.now()
-        print(f"  ✓ Updated product: {product_name}")
 
-    # Get or create "Full Bottle" size
-    full_bottle_size = Size.query.filter_by(name="Full Bottle").first()
-    if not full_bottle_size:
-        full_bottle_size = Size(
-            name="Full Bottle",
-            description="Entire bottle/unit as purchased",
-            sort_order=1,
-            created_by=admin.id if admin else None
-        )
-        db.session.add(full_bottle_size)
-        db.session.flush()
+    # Get or create "Full Bottle" size and variant
+    full_bottle_size = get_or_create_size("Full Bottle", "Entire bottle/unit as purchased", 1)
 
-    # Get or create variant
     variant = ProductVariant.query.filter_by(
         product_id=product.id,
         size_id=full_bottle_size.id
@@ -289,316 +621,305 @@ def update_product_stock_for_nov6(name, category, opening_stock, additions,
         variant = ProductVariant(
             product_id=product.id,
             size_id=full_bottle_size.id,
-            selling_price=selling_price,
+            selling_price=default_selling_price,
             conversion_factor=1.0,
             created_by=admin.id if admin else None
         )
         db.session.add(variant)
         db.session.flush()
-        print(f"    → Created 'Full Bottle' variant (Price: KES {selling_price})")
     else:
-        variant.selling_price = selling_price
-        print(f"    → Updated 'Full Bottle' variant (Price: KES {selling_price})")
+        variant.selling_price = default_selling_price
 
-    # Create DailyStock record for November 6th
-    daily_stock = DailyStock.query.filter_by(
+    # Process each day's data
+    for day_idx, day_tuple in enumerate(daily_data):
+        opening, additions, sales, actual_price = day_tuple
+        current_date = IMPORT_DATES[day_idx]
+
+        # Use actual price if provided, otherwise use default
+        selling_price = actual_price if actual_price is not None else default_selling_price
+
+        # Convert to Decimal for precision
+        opening_dec = Decimal(str(opening))
+        additions_dec = Decimal(str(additions))
+        sales_dec = Decimal(str(sales))
+
+        # Create or update daily stock
+        daily_stock = DailyStock.query.filter_by(
+            product_id=product.id,
+            date=current_date
+        ).first()
+
+        if not daily_stock:
+            daily_stock = DailyStock(
+                product_id=product.id,
+                date=current_date,
+                opening_stock=float(opening_dec),
+                additions=0,
+                sales_quantity=0,
+                closing_stock=float(opening_dec),
+                updated_by=admin.id if admin else None,
+                updated_at=datetime.now()
+            )
+            db.session.add(daily_stock)
+            db.session.flush()
+
+        # Create stock purchase if additions > 0
+        if additions_dec > 0:
+            purchase = StockPurchase(
+                product_id=product.id,
+                quantity=float(additions_dec),
+                unit_cost=buying_price,
+                total_cost=float(additions_dec) * buying_price,
+                purchase_date=current_date,
+                notes=f"Stock purchase - {product_name}",
+                recorded_by=admin.id if admin else None,
+                timestamp=datetime.now()
+            )
+            db.session.add(purchase)
+            db.session.flush()
+            daily_stock.additions = float(additions_dec)
+
+        # Create sale if sales > 0
+        if sales_dec > 0:
+            cost_per_unit = buying_price * variant.conversion_factor
+            total_cost = cost_per_unit * float(sales_dec)
+            total_amount = float(sales_dec) * selling_price
+
+            sale = Sale(
+                variant_id=variant.id,
+                attendant_id=admin.id if admin else None,
+                quantity=float(sales_dec),
+                unit_price=selling_price,
+                original_amount=total_amount,
+                discount_type='none',
+                discount_value=0,
+                discount_amount=0,
+                total_amount=total_amount,
+                cash_amount=total_amount,
+                mpesa_amount=0,
+                credit_amount=0,
+                payment_method='cash',
+                sale_date=current_date,
+                timestamp=datetime.now(),
+                notes=f"Sale - {product_name}" + (f" @ {selling_price}" if actual_price else "")
+            )
+            db.session.add(sale)
+            db.session.flush()
+            daily_stock.sales_quantity = float(sales_dec)
+
+        # Calculate closing stock
+        daily_stock.calculate_closing_stock()
+
+    # Update product's final stock
+    last_daily = DailyStock.query.filter_by(
         product_id=product.id,
-        date=IMPORT_DATE
+        date=IMPORT_DATES[-1]
+    ).first()
+    if last_daily:
+        product.current_stock = last_daily.closing_stock
+
+    return product
+
+def create_tot_variant_and_sales():
+    """Create 'Tot (25ml)' variant for County 750ML and record tot sales"""
+    admin = User.query.filter_by(role='admin').first()
+
+    # Find County 750ML product
+    county_product = Product.query.filter_by(name="County 750ML").first()
+    if not county_product:
+        print("⚠️  County 750ML product not found!")
+        return
+
+    # Create or get "Tot (25ml)" size
+    tot_size = get_or_create_size("Tot (25ml)", "25ml shot/tot", 2)
+
+    # Check if tot variant exists
+    tot_variant = ProductVariant.query.filter_by(
+        product_id=county_product.id,
+        size_id=tot_size.id
     ).first()
 
-    if not daily_stock:
-        daily_stock = DailyStock(
-            product_id=product.id,
-            date=IMPORT_DATE,
-            opening_stock=opening_stock,
-            additions=0,
-            sales_quantity=0,
-            closing_stock=opening_stock,
-            updated_by=admin.id if admin else None,
-            updated_at=datetime.now()
+    if not tot_variant:
+        # 750ml bottle has 30 tots (750/25 = 30)
+        # Conversion factor: 1 tot = 0.0333 bottles (1/30)
+        tot_variant = ProductVariant(
+            product_id=county_product.id,
+            size_id=tot_size.id,
+            selling_price=50,  # 50 KES per tot
+            conversion_factor=0.0333,  # 1 tot = 0.0333 bottles
+            created_by=admin.id if admin else None
         )
-        db.session.add(daily_stock)
+        db.session.add(tot_variant)
         db.session.flush()
-        print(f"    → Created daily stock record (Opening: {opening_stock})")
+        print(f"  ✓ Created 'Tot (25ml)' variant for County 750ML (Price: KES 50)")
 
-    # Create stock purchase if there were additions
-    if additions > 0:
-        purchase = StockPurchase(
-            product_id=product.id,
-            quantity=additions,
-            unit_cost=buying_price,
-            total_cost=additions * buying_price,
-            purchase_date=IMPORT_DATE,
-            notes="Stock addition - November 6, 2025",
-            recorded_by=admin.id if admin else None,
-            timestamp=datetime.now()
+    # Record tot sales
+    for day_idx, quantity in TOTS_SALES:
+        if quantity > 0:
+            current_date = IMPORT_DATES[day_idx]
+
+            # Calculate cost and profit
+            cost_per_tot = county_product.base_buying_price * tot_variant.conversion_factor
+            total_cost = cost_per_tot * quantity
+            total_amount = quantity * 50
+
+            sale = Sale(
+                variant_id=tot_variant.id,
+                attendant_id=admin.id if admin else None,
+                quantity=quantity,
+                unit_price=50,
+                original_amount=total_amount,
+                discount_type='none',
+                discount_value=0,
+                discount_amount=0,
+                total_amount=total_amount,
+                cash_amount=total_amount,
+                mpesa_amount=0,
+                credit_amount=0,
+                payment_method='cash',
+                sale_date=current_date,
+                timestamp=datetime.now(),
+                notes=f"County tots sale"
+            )
+            db.session.add(sale)
+            print(f"    → Tot sale on {current_date}: {quantity} tots @ KES 50 = KES {total_amount}")
+
+def import_expenses():
+    """Import all expenses"""
+    admin = User.query.filter_by(role='admin').first()
+
+    print("\n💰 Importing Expenses...")
+    print("-" * 70)
+
+    for day_idx, description, amount, category_name in EXPENSES_DATA:
+        expense_cat = get_or_create_expense_category(category_name)
+        current_date = IMPORT_DATES[day_idx]
+
+        expense = Expense(
+            description=description,
+            amount=amount,
+            expense_category_id=expense_cat.id,
+            expense_date=current_date,
+            notes=f"From Excel import - {current_date}",
+            recorded_by=admin.id
         )
-        db.session.add(purchase)
-        db.session.flush()
-        print(f"    → Purchase: +{additions} bottles @ KES {buying_price} = KES {additions * buying_price}")
-        daily_stock.additions = additions
+        db.session.add(expense)
+        print(f"  {current_date}: {description} - KES {amount} ({category_name})")
 
-    # Create sales if there were sales
-    if sales > 0:
-        cost_per_unit = buying_price * variant.conversion_factor
-        total_cost = cost_per_unit * sales
-        total_amount = sales * selling_price
-        profit = total_amount - total_cost
+def update_daily_summaries():
+    """Update daily summaries for all import dates"""
+    admin = User.query.filter_by(role='admin').first()
 
-        sale = Sale(
-            variant_id=variant.id,
-            attendant_id=admin.id if admin else None,
-            quantity=sales,
-            unit_price=selling_price,
-            original_amount=total_amount,
-            discount_type='none',
-            discount_value=0,
-            discount_amount=0,
-            total_amount=total_amount,
-            cash_amount=total_amount,
-            mpesa_amount=0,
-            credit_amount=0,
-            payment_method='cash',
-            sale_date=IMPORT_DATE,
-            timestamp=datetime.now(),
-            notes="Sale - November 6, 2025"
-        )
-        db.session.add(sale)
-        db.session.flush()
-        print(f"    → Sale: -{sales} bottles @ KES {selling_price} = KES {total_amount} (Profit: KES {profit:.2f})")
-        daily_stock.sales_quantity = sales
+    print("\n📊 Updating Daily Summaries...")
+    print("-" * 70)
 
-    # Recalculate closing stock
-    daily_stock.calculate_closing_stock()
-    print(f"    → Daily Stock Summary: Open={daily_stock.opening_stock}, " +
-          f"Add={daily_stock.additions}, Sales={daily_stock.sales_quantity}, " +
-          f"Close={daily_stock.closing_stock}")
+    for import_date in IMPORT_DATES:
+        # Calculate totals from actual records
+        total_sales = db.session.query(
+            db.func.coalesce(db.func.sum(Sale.total_amount), 0)
+        ).filter(Sale.sale_date == import_date).scalar() or 0
 
-    # Verify sync
-    if product.current_stock != daily_stock.closing_stock:
-        print(f"    ⚠️  WARNING: Product stock ({product.current_stock}) != Daily closing ({daily_stock.closing_stock})")
-        product.current_stock = daily_stock.closing_stock
-        print(f"    ✓ Synced product stock to {daily_stock.closing_stock}")
+        total_expenses = db.session.query(
+            db.func.coalesce(db.func.sum(Expense.amount), 0)
+        ).filter(Expense.expense_date == import_date).scalar() or 0
 
-    return product, variant
+        # Calculate profit from sales
+        sales_with_profit = db.session.query(
+            db.func.coalesce(db.func.sum(
+                Sale.total_amount - (Product.base_buying_price * ProductVariant.conversion_factor * Sale.quantity)
+            ), 0)
+        ).join(ProductVariant).join(Product).filter(
+            Sale.sale_date == import_date
+        ).scalar() or 0
+
+        # Calculate payment breakdown
+        payment_breakdown = db.session.query(
+            db.func.coalesce(db.func.sum(Sale.cash_amount), 0).label('cash'),
+            db.func.coalesce(db.func.sum(Sale.mpesa_amount), 0).label('mpesa'),
+            db.func.coalesce(db.func.sum(Sale.credit_amount), 0).label('credit')
+        ).filter(Sale.sale_date == import_date).first()
+
+        transaction_count = Sale.query.filter_by(sale_date=import_date).count()
+        expense_count = Expense.query.filter_by(expense_date=import_date).count()
+
+        # Create or update daily summary
+        summary = DailySummary.query.filter_by(date=import_date).first()
+        if not summary:
+            summary = DailySummary(date=import_date)
+            db.session.add(summary)
+
+        summary.total_sales = total_sales
+        summary.total_profit = sales_with_profit
+        summary.total_expenses = total_expenses
+        summary.net_profit = sales_with_profit - total_expenses
+        summary.cash_amount = payment_breakdown.cash or 0
+        summary.paybill_amount = payment_breakdown.mpesa or 0
+        summary.credit_amount = payment_breakdown.credit or 0
+        summary.last_updated_by = admin.id
+        summary.last_updated_at = datetime.now()
+
+        print(f"  {import_date}: Sales=KES {total_sales:,.2f}, Profit=KES {sales_with_profit:,.2f}, " +
+              f"Expenses=KES {total_expenses:,.2f}, Net=KES {summary.net_profit:,.2f}")
 
 def import_data():
-    """Main import function for November 6th"""
+    """Main import function that orchestrates the entire data import"""
     with app.app_context():
+        print("\n" + "="*70)
+        print("LIQUORPRO SYSTEM - COMPLETE NOVEMBER DATA IMPORT")
+        print("="*70)
+
         try:
-            print("="*70)
-            print("IMPORTING DATA FOR NOVEMBER 6, 2025")
-            print("Updating existing products with November 6th stock data")
-            print("="*70)
+            # Create categories
+            print("\n📁 Setting up categories...")
+            get_or_create_category("Beers", "Alcoholic beverages - beers and ciders")
+            get_or_create_category("Spirits", "Alcoholic spirits and liquors")
+            get_or_create_category("Wines", "Wine products")
+            get_or_create_category("Soft Drinks", "Non-alcoholic beverages")
 
-            # Get admin user
-            admin = User.query.filter_by(role='admin').first()
-            if not admin:
-                print("❌ Error: Admin user not found!")
-                return
-
-            print(f"\n✓ Using admin user: {admin.full_name}")
-
-            # Get or create categories
-            print("\n📁 Getting Categories...")
-            categories = {}
-            for cat_name in ["Beers", "Spirits", "Wines", "Soft Drinks"]:
-                categories[cat_name] = get_or_create_category(cat_name)
-
-            db.session.commit()
-
-            # Import all products for November 6th
-            print("\n📦 Importing November 6th Stock Data...")
+            # Import all products
+            print("\n📦 Importing Products & Daily Stock Data...")
             print("-" * 70)
+            for product_name, (category, buying_price, selling_price, daily_data) in PRODUCTS_DATA.items():
+                print(f"  → {product_name}")
+                import_product_daily_data(product_name, category, buying_price, selling_price, daily_data)
 
-            products_updated = 0
-            purchases_created = 0
-            sales_created = 0
+            # Create tot variant and sales
+            print("\n🥃 Creating Tot Variant & Sales...")
+            create_tot_variant_and_sales()
 
-            for product_data in PRODUCTS_DATA:
-                name, category_name, opening, additions, sales, selling, buying = product_data
+            # Import expenses
+            import_expenses()
 
-                category = categories[category_name]
-                product, variant = update_product_stock_for_nov6(
-                    name, category, opening, additions, sales, selling, buying
-                )
+            # Update daily summaries
+            update_daily_summaries()
 
-                products_updated += 1
-                if additions > 0:
-                    purchases_created += 1
-                if sales > 0:
-                    sales_created += 1
-
-                print()  # Blank line between products
-
-            # Update DailySummary for November 6th
-            print("\n📊 Creating Daily Summary for November 6, 2025...")
-            print("-" * 70)
-
-            from models import DailySummary
-
-            # Calculate totals from actual records
-            total_sales = db.session.query(
-                db.func.coalesce(db.func.sum(Sale.total_amount), 0)
-            ).filter(Sale.sale_date == IMPORT_DATE).scalar()
-
-            total_expenses = db.session.query(
-                db.func.coalesce(db.func.sum(Expense.amount), 0)
-            ).filter(Expense.expense_date == IMPORT_DATE).scalar()
-
-            # Calculate profit from sales
-            sales_with_profit = db.session.query(
-                db.func.coalesce(db.func.sum(
-                    Sale.total_amount - (Product.base_buying_price * ProductVariant.conversion_factor * Sale.quantity)
-                ), 0)
-            ).join(ProductVariant).join(Product).filter(
-                Sale.sale_date == IMPORT_DATE
-            ).scalar()
-
-            # Calculate payment breakdown
-            payment_breakdown = db.session.query(
-                db.func.coalesce(db.func.sum(Sale.cash_amount), 0).label('cash'),
-                db.func.coalesce(db.func.sum(Sale.mpesa_amount), 0).label('mpesa'),
-                db.func.coalesce(db.func.sum(Sale.credit_amount), 0).label('credit')
-            ).filter(Sale.sale_date == IMPORT_DATE).first()
-
-            transaction_count = Sale.query.filter_by(sale_date=IMPORT_DATE).count()
-            expense_count = Expense.query.filter_by(expense_date=IMPORT_DATE).count()
-
-            # Create or update daily summary
-            summary = DailySummary.query.filter_by(date=IMPORT_DATE).first()
-            if not summary:
-                summary = DailySummary(date=IMPORT_DATE)
-                db.session.add(summary)
-
-            summary.total_sales = total_sales or 0
-            summary.total_profit = sales_with_profit or 0
-            summary.total_expenses = total_expenses or 0
-            summary.net_profit = (sales_with_profit or 0) - (total_expenses or 0)
-            summary.total_transactions = transaction_count
-            summary.expense_count = expense_count
-            summary.cash_amount = payment_breakdown.cash or 0
-            summary.paybill_amount = payment_breakdown.mpesa or 0
-            summary.credit_amount = payment_breakdown.credit or 0
-            summary.last_updated_by = admin.id
-            summary.last_updated_at = datetime.now()
-
-            print(f"  ✓ Daily Summary Created:")
-            print(f"    - Total Sales: KES {summary.total_sales:,.2f}")
-            print(f"    - Gross Profit: KES {summary.total_profit:,.2f}")
-            print(f"    - Total Expenses: KES {summary.total_expenses:,.2f}")
-            print(f"    - Net Profit: KES {summary.net_profit:,.2f}")
-            print(f"    - Transactions: {summary.total_transactions}")
-            print(f"    - Cash: KES {summary.cash_amount:,.2f} (Expected: KES 3,100)")
-            print(f"    - M-Pesa: KES {summary.paybill_amount:,.2f} (Expected: KES 13,210)")
-            print(f"    - Credit: KES {summary.credit_amount:,.2f}")
-            print(f"    - Total Expected Sales: KES 16,310")
-
-            # Import expenses (amounts not specified in PDF)
-            print("\n💰 Expense Categories (amounts not specified in PDF)...")
-            print("-" * 70)
-            for description, amount, category_name in EXPENSES_DATA:
-                expense_cat = get_or_create_expense_category(category_name)
-                print(f"  • {description} - Category: {category_name}")
-
-            # Commit all changes
+            # Commit everything
             db.session.commit()
 
             print("\n" + "="*70)
-            print("✅ NOVEMBER 6TH DATA IMPORT COMPLETED SUCCESSFULLY!")
+            print("✅ IMPORT COMPLETED SUCCESSFULLY!")
             print("="*70)
-
-            # Print summary
-            print("\n📊 IMPORT SUMMARY:")
-            print("-" * 70)
-            print(f"  Products in Database: {Product.query.count()}")
-            print(f"  Product Variants: {ProductVariant.query.count()}")
-            print(f"  Sales Records (Nov 6): {Sale.query.filter_by(sale_date=IMPORT_DATE).count()}")
-            print(f"  Purchase Records (Nov 6): {StockPurchase.query.filter_by(purchase_date=IMPORT_DATE).count()}")
-            print(f"  Daily Stock Records (Nov 6): {DailyStock.query.filter_by(date=IMPORT_DATE).count()}")
-
-            # Print sales breakdown
-            print("\n💰 SALES BREAKDOWN (November 6th):")
-            print("-" * 70)
-
-            # From the PDF: Total Sales = 16,310
-            # Paybill: 13,210
-            # Cash: 3,100
-            # Credit: 0
-
-            print(f"  Expected Total Sales: KES 16,310")
-            print(f"  Expected Paybill (M-Pesa): KES 13,210")
-            print(f"  Expected Cash: KES 3,100")
-            print(f"  Expected Credit: KES 0")
-            print()
-            print(f"  Actual Total Sales: KES {summary.total_sales:,.2f}")
-            print(f"  Difference: KES {summary.total_sales - 16310:,.2f}")
-
-            # Verify data integrity
-            print("\n🔍 DATA INTEGRITY CHECK:")
-            print("-" * 70)
-            products_with_issues = 0
-            for product in Product.query.all():
-                daily = DailyStock.query.filter_by(product_id=product.id, date=IMPORT_DATE).first()
-                if daily:
-                    if abs(product.current_stock - daily.closing_stock) > 0.01:
-                        print(f"  ⚠️  {product.name}: Stock mismatch (Product: {product.current_stock}, Daily: {daily.closing_stock})")
-                        products_with_issues += 1
-
-            if products_with_issues == 0:
-                print(f"  ✅ All products synchronized correctly!")
-            else:
-                print(f"  ⚠️  {products_with_issues} product(s) with stock mismatches")
-
-            # Notable items from November 6th
-            print("\n📝 NOTABLE ITEMS (November 6th):")
-            print("-" * 70)
-            print("  • New item added: 'Lime' - 32 units added, 1 sold")
-            print("  • Kenya Cane 750ML - Down to 0 units (was 1, sold 1)")
-            print("  • Kenya Cane 250ML - High sales: 10 units sold")
-            print("  • Blue Ice 250ML - 12.5 units sold (partial bottles)")
-            print("  • Chrome Gin 250ML - High volume: 116.5 units in stock")
-            print("  • Liberty 250ML - 3.5 units sold (partial bottles)")
-            print("  • Kibao 250ML - 4.5 units sold")
-            print("  • County 250ML - 2.5 units sold")
-
-            print("\n⚠️  IMPORTANT NOTES:")
-            print("-" * 70)
-            print("  1. Expense amounts were not specified in the PDF")
-            print("     You'll need to add these manually with actual amounts:")
-            print("     - Police (Security)")
-            print("     - Tissue (General Expenses)")
-            print("     - Stocksheet (Office Supplies)")
-            print("     - Purchases (Stock Purchases)")
-            print()
-            print("  2. Payment breakdown from PDF:")
-            print("     - Paybill: KES 13,210")
-            print("     - Cash: KES 3,100")
-            print("     - Total: KES 16,310")
-            print()
-            print("  3. All sales were recorded as CASH payment method")
-            print("     You may need to adjust payment methods to match:")
-            print("     - Update sales to reflect M-Pesa vs Cash split")
-
-            print("\n📝 NEXT STEPS:")
-            print("-" * 70)
-            print("  1. Login and verify November 6th data on the Daily Stock page")
-            print("  2. Add expense amounts for: Police, Tissue, Stocksheet, Purchases")
-            print("  3. Review and adjust payment methods for sales if needed")
-            print("  4. Verify the sales total matches KES 16,310")
-            print("  5. Check products with 0 stock for reordering")
-            print("  6. Continue normal operations for November 7th onwards")
+            print(f"\nImported data for dates: {IMPORT_DATES[0]} to {IMPORT_DATES[-1]}")
+            print(f"Total products: {len(PRODUCTS_DATA)}")
+            print(f"Total expenses: {len(EXPENSES_DATA)}")
 
         except Exception as e:
             db.session.rollback()
-            print(f"\n❌ ERROR: {str(e)}")
+            print(f"\n❌ ERROR during import: {str(e)}")
+            print("Database changes have been rolled back.")
             import traceback
             traceback.print_exc()
+            raise
 
 if __name__ == '__main__':
-    print("\n⚠️  WARNING: This will import November 6th data into the database.")
-    print("   This will update existing products with Nov 6th stock levels.")
-    print("   Make sure November 1st data has been imported first.\n")
+    print("\n⚠️  WARNING: This will import complete November 1-6, 2025 data.")
+    print("   - Each size (750ML, 250ML) will be a SEPARATE product")
+    print("   - Daily stock continuity will be maintained")
+    print("   - Fractional quantities are supported (e.g., 2.5, 15.75)")
+    print("   - Variable selling prices are tracked per transaction")
+    print("   - County 750ML tots variant will be created automatically")
+    print("   - All sales, purchases, and expenses will be recorded")
+    print("   - Missing products (Lime, Old Monk, Robertson Wine) are included\n")
 
     response = input("Do you want to continue? (yes/no): ")
     if response.lower() == 'yes':
